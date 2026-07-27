@@ -1,0 +1,33 @@
+{
+  "radar": {
+    "map_size": 40,
+    "update_interval": 0.2,
+    "scale": 20,
+    "log_enabled": true,
+    "colors_enabled": true
+  },
+  "display": {
+    "show_health_bars": true,
+    "show_weapons": true,
+    "show_distances": true,
+    "show_direction": true,
+    "show_player_list": true,
+    "max_players_in_list": 15
+  },
+  "safety": {
+    "require_insecure": true,
+    "read_only_mode": true
+  },
+  "offsets_source": {
+    "url": "https://raw.githubusercontent.com/sezzyaep/CS2-OFFSETS/main/offsets.json",
+    "local_file": "offsets.json",
+    "auto_update": true,
+    "update_check_interval": 86400
+  },
+  "logging": {
+    "enabled": true,
+    "log_file_prefix": "radar_log",
+    "log_level": "INFO",
+    "max_log_files": 10
+  }
+}
