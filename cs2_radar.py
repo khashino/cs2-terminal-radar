@@ -1,7 +1,6 @@
 """
 CS2 Terminal Radar - Educational Tool
-Displays a top-down map in the console with advanced features.
-SAFER than overlay because it uses the terminal and looks like a dev tool.
+Loads configuration and offsets from external JSON files
 """
 
 import pymem
@@ -12,86 +11,205 @@ import os
 import sys
 import json
 import datetime
+import requests
 from typing import Optional, Tuple, List, Dict
 
-# ===== OFFSETS FROM PROVIDED offsets.py =====
-# These are updated as of 2026-07-21 (Build 14172)
-# To update: Replace the values below with the latest from:
-# https://github.com/sezzyaep/CS2-OFFSETS/blob/main/offsets.py
-
-class ClientDll:
-    dwCSGOInput = 0x23BA790
-    dwEntityList = 0x254FE70
-    dwGameEntitySystem = 0x254FE70
-    dwGameEntitySystem_highestEntityIndex = 0x2090
-    dwGameRules = 0x1A525C0
-    dwGlobalVars = 0x2090D60
-    dwGlowManager = 0x23A1708
-    dwLocalPlayerController = 0x237FB70
-    dwLocalPlayerPawn = 0x23A5238
-    dwPlantedC4 = 0x236F658
-    dwPrediction = 0x23A5140
-    dwSensitivity = 0x23A2228
-    dwSensitivity_sensitivity = 0x58
-    dwViewAngles = 0x23BAE18
-    dwViewMatrix = 0x23AA340
-    dwViewRender = 0x23AA398
-    dwWeaponC4 = 0x231DB10
-
-class Engine2Dll:
-    dwBuildNumber = 0x60F594
-    dwNetworkGameClient = 0x90D4B0
-    dwNetworkGameClient_clientTickCount = 0x378
-    dwNetworkGameClient_deltaTick = 0x24C
-    dwNetworkGameClient_isBackgroundMap = 0x2C141F
-    dwNetworkGameClient_localPlayer = 0xF8
-    dwNetworkGameClient_maxClients = 0x240
-    dwNetworkGameClient_serverTickCount = 0x24C
-    dwNetworkGameClient_signOnState = 0x230
-    dwWindowHeight = 0x9118D4
-    dwWindowWidth = 0x9118D0
-
-# Netvars (from client_dll.json - these are common ones you'd need)
-# For a complete list, check: https://github.com/sezzyaep/CS2-OFFSETS/blob/main/client_dll.json
-class Netvars:
-    m_iHealth = 0x344
-    m_iTeamNum = 0x3E3
-    m_vOldOrigin = 0x1324
-    m_hPlayerPawn = 0x814
-    m_iShotsFired = 0x3A0
-    m_angEyeAngles = 0x1618
-    m_flFlashMaxAlpha = 0x14B4
-    m_bIsScoped = 0x14E4
-    m_iWeapon = 0x12A8
-    m_pWeaponServices = 0x1270
-    m_hActiveWeapon = 0x1838
-
-# ===== END OF OFFSETS =====
+class ConfigManager:
+    """Manages configuration and offsets loading"""
+    
+    def __init__(self, config_file="config.json", offsets_file="offsets.json"):
+        self.config_file = config_file
+        self.offsets_file = offsets_file
+        self.config = {}
+        self.offsets = {}
+        self.load_config()
+        self.load_offsets()
+    
+    def load_config(self):
+        """Load configuration from JSON file"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r') as f:
+                    self.config = json.load(f)
+            else:
+                print(f"⚠️  Config file {self.config_file} not found. Using defaults.")
+                self.config = self.get_default_config()
+                self.save_config()
+        except Exception as e:
+            print(f"❌ Error loading config: {e}")
+            self.config = self.get_default_config()
+    
+    def get_default_config(self):
+        """Return default configuration"""
+        return {
+            "radar": {
+                "map_size": 40,
+                "update_interval": 0.2,
+                "scale": 20,
+                "log_enabled": True,
+                "colors_enabled": True
+            },
+            "display": {
+                "show_health_bars": True,
+                "show_weapons": True,
+                "show_distances": True,
+                "show_direction": True,
+                "show_player_list": True,
+                "max_players_in_list": 15
+            },
+            "safety": {
+                "require_insecure": True,
+                "read_only_mode": True
+            },
+            "offsets_source": {
+                "url": "https://raw.githubusercontent.com/sezzyaep/CS2-OFFSETS/main/offsets.json",
+                "local_file": "offsets.json",
+                "auto_update": True,
+                "update_check_interval": 86400
+            },
+            "logging": {
+                "enabled": True,
+                "log_file_prefix": "radar_log",
+                "log_level": "INFO",
+                "max_log_files": 10
+            }
+        }
+    
+    def save_config(self):
+        """Save current configuration to file"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(self.config, f, indent=2)
+        except Exception as e:
+            print(f"⚠️  Could not save config: {e}")
+    
+    def load_offsets(self):
+        """Load offsets from JSON file or fetch from GitHub"""
+        source = self.config.get("offsets_source", {})
+        local_file = source.get("local_file", "offsets.json")
+        auto_update = source.get("auto_update", True)
+        
+        # Try to load local offsets file
+        if os.path.exists(local_file):
+            try:
+                with open(local_file, 'r') as f:
+                    self.offsets = json.load(f)
+                print(f"✅ Loaded offsets from {local_file}")
+                print(f"   Build: {self.offsets.get('build', 'Unknown')}")
+                print(f"   Timestamp: {self.offsets.get('timestamp', 'Unknown')}")
+                return True
+            except Exception as e:
+                print(f"⚠️  Error loading offsets file: {e}")
+        
+        # Try to fetch from GitHub if auto_update is enabled
+        if auto_update:
+            url = source.get("url")
+            if url:
+                print(f"🔄 Fetching offsets from GitHub...")
+                try:
+                    response = requests.get(url, timeout=5)
+                    if response.status_code == 200:
+                        self.offsets = response.json()
+                        # Save to local file
+                        with open(local_file, 'w') as f:
+                            json.dump(self.offsets, f, indent=2)
+                        print(f"✅ Downloaded and saved offsets")
+                        print(f"   Build: {self.offsets.get('build', 'Unknown')}")
+                        print(f"   Timestamp: {self.offsets.get('timestamp', 'Unknown')}")
+                        return True
+                    else:
+                        print(f"❌ Failed to fetch offsets: HTTP {response.status_code}")
+                except Exception as e:
+                    print(f"❌ Error fetching offsets: {e}")
+        
+        print("❌ Could not load offsets. Using hardcoded fallback values.")
+        self.offsets = self.get_fallback_offsets()
+        return False
+    
+    def get_fallback_offsets(self):
+        """Return hardcoded fallback offsets"""
+        return {
+            "timestamp": "Unknown",
+            "build": 0,
+            "client_dll": {
+                "dwLocalPlayerPawn": "0x23A5238",
+                "dwEntityList": "0x254FE70",
+                "dwViewAngles": "0x23BAE18",
+                "dwViewMatrix": "0x23AA340"
+            },
+            "netvars": {
+                "m_iHealth": "0x344",
+                "m_iTeamNum": "0x3E3",
+                "m_vOldOrigin": "0x1324",
+                "m_hPlayerPawn": "0x814"
+            }
+        }
+    
+    def get(self, key, default=None):
+        """Get config value by dot notation (e.g., 'radar.map_size')"""
+        keys = key.split('.')
+        value = self.config
+        for k in keys:
+            if isinstance(value, dict):
+                value = value.get(k, default)
+            else:
+                return default
+        return value
+    
+    def get_offset(self, key, default="0x0"):
+        """Get offset value by dot notation (e.g., 'client_dll.dwLocalPlayerPawn')"""
+        keys = key.split('.')
+        value = self.offsets
+        for k in keys:
+            if isinstance(value, dict):
+                value = value.get(k, default)
+            else:
+                return int(default, 16) if isinstance(default, str) and default.startswith('0x') else default
+        
+        # Convert hex string to int
+        if isinstance(value, str) and value.startswith('0x'):
+            return int(value, 16)
+        return value
 
 class TerminalRadar:
-    def __init__(self, map_size: int = 40, update_interval: float = 0.2):
-        """Initialize radar with configurable size and update rate"""
-        self.map_size = map_size
-        self.update_interval = update_interval
-        self.radius = map_size // 2
-        self.scale = 20  # Adjust for zoom (lower = zoomed in, higher = zoomed out)
+    """Main radar class with external config and offsets"""
+    
+    def __init__(self, config_manager=None):
+        self.config = config_manager or ConfigManager()
+        self.map_size = self.config.get('radar.map_size', 40)
+        self.update_interval = self.config.get('radar.update_interval', 0.2)
+        self.radius = self.map_size // 2
+        self.scale = self.config.get('radar.scale', 20)
+        self.log_enabled = self.config.get('radar.log_enabled', True)
+        self.colors_enabled = self.config.get('radar.colors_enabled', True)
         
-        # Store previous state for health bars
-        self.previous_players = {}
+        # Display settings
+        self.show_health_bars = self.config.get('display.show_health_bars', True)
+        self.show_weapons = self.config.get('display.show_weapons', True)
+        self.show_distances = self.config.get('display.show_distances', True)
+        self.show_direction = self.config.get('display.show_direction', True)
+        self.show_player_list = self.config.get('display.show_player_list', True)
+        self.max_players_in_list = self.config.get('display.max_players_in_list', 15)
         
-        # Initialize rotation angle (0 = north up)
-        self.rotation_angle = 0  # In degrees
+        # Logging settings
+        self.log_prefix = self.config.get('logging.log_file_prefix', 'radar_log')
+        self.log_level = self.config.get('logging.log_level', 'INFO')
+        self.max_log_files = self.config.get('logging.max_log_files', 10)
         
-        # Logging setup
-        self.log_file = f"radar_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        self.log_enabled = True
-        
+        self.rotation_angle = 0
+        self.log_file = None
         self.pm = None
         self.client_base = None
         self.engine_base = None
         self.is_connected = False
         
-        # Colors for terminal output
+        # Initialize logging
+        if self.log_enabled:
+            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.log_file = f"{self.log_prefix}_{timestamp}.txt"
+            self.cleanup_old_logs()
+        
+        # Colors
         self.COLORS = {
             'RESET': '\033[0m',
             'RED': '\033[91m',
@@ -108,12 +226,21 @@ class TerminalRadar:
             'BG_YELLOW': '\033[43m',
         }
     
+    def cleanup_old_logs(self):
+        """Remove old log files to prevent clutter"""
+        try:
+            log_files = sorted([f for f in os.listdir('.') if f.startswith(self.log_prefix)])
+            if len(log_files) > self.max_log_files:
+                for f in log_files[:-self.max_log_files]:
+                    os.remove(f)
+        except:
+            pass
+    
     def connect(self) -> bool:
-        """Connect to CS2 process and get module bases"""
+        """Connect to CS2 process"""
         try:
             self.pm = pymem.Pymem("cs2.exe")
             
-            # Get client.dll base
             client_module = pymem.process.module_from_name(
                 self.pm.process_handle, "client.dll"
             )
@@ -121,7 +248,6 @@ class TerminalRadar:
                 return False
             self.client_base = client_module.lpBaseOfDll
             
-            # Get engine2.dll base
             engine_module = pymem.process.module_from_name(
                 self.pm.process_handle, "engine2.dll"
             )
@@ -136,39 +262,38 @@ class TerminalRadar:
             return False
     
     def log(self, level: str, message: str):
-        """Write to log file if enabled"""
-        if not self.log_enabled:
+        """Write to log file"""
+        if not self.log_enabled or not self.log_file:
             return
         try:
+            if level == "INFO" and self.log_level != "INFO":
+                return
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(self.log_file, 'a') as f:
                 f.write(f"[{timestamp}] [{level}] {message}\n")
         except:
             pass
     
+    # [Continue with all the reading methods from the previous code]
     def read_int(self, address: int) -> int:
-        """Safe int reading"""
         try:
             return self.pm.read_int(address)
         except:
             return 0
     
     def read_longlong(self, address: int) -> int:
-        """Safe long long reading"""
         try:
             return self.pm.read_longlong(address)
         except:
             return 0
     
     def read_float(self, address: int) -> float:
-        """Safe float reading"""
         try:
             return self.pm.read_float(address)
         except:
             return 0.0
     
     def read_vector(self, address: int) -> Optional[Tuple[float, float, float]]:
-        """Read 3D position"""
         try:
             x = self.read_float(address)
             y = self.read_float(address + 0x4)
@@ -178,9 +303,9 @@ class TerminalRadar:
             return None
     
     def get_view_angles(self) -> Optional[Tuple[float, float]]:
-        """Get player view angles (yaw, pitch)"""
+        """Get player view angles using loaded offsets"""
         try:
-            angles_addr = self.client_base + ClientDll.dwViewAngles
+            angles_addr = self.client_base + self.config.get_offset('client_dll.dwViewAngles')
             yaw = self.read_float(angles_addr)
             pitch = self.read_float(angles_addr + 0x4)
             return (yaw, pitch)
@@ -188,16 +313,16 @@ class TerminalRadar:
             return None
     
     def get_local_player(self) -> Optional[Tuple[int, Tuple[float, float, float], Tuple[float, float]]]:
-        """Get local player info: team, position, view angles"""
+        """Get local player info using loaded offsets"""
         try:
             local_pawn = self.read_longlong(
-                self.client_base + ClientDll.dwLocalPlayerPawn
+                self.client_base + self.config.get_offset('client_dll.dwLocalPlayerPawn')
             )
             if not local_pawn:
                 return None
             
-            team = self.read_int(local_pawn + Netvars.m_iTeamNum)
-            pos = self.read_vector(local_pawn + Netvars.m_vOldOrigin)
+            team = self.read_int(local_pawn + self.config.get_offset('netvars.m_iTeamNum'))
+            pos = self.read_vector(local_pawn + self.config.get_offset('netvars.m_vOldOrigin'))
             angles = self.get_view_angles()
             
             if not pos:
@@ -209,36 +334,13 @@ class TerminalRadar:
             return None
     
     def get_active_weapon(self, pawn: int) -> str:
-        """Get the name of the player's active weapon"""
+        """Placeholder weapon detection"""
         try:
-            # Get weapon services
-            weapon_services = self.read_longlong(pawn + Netvars.m_pWeaponServices)
-            if not weapon_services:
-                return "?"
-            
-            # Get active weapon handle
-            active_weapon_handle = self.read_int(weapon_services + Netvars.m_hActiveWeapon)
-            if not active_weapon_handle:
-                return "?"
-            
-            # Resolve weapon entity (simplified - this is a placeholder)
-            # In a full implementation, you'd resolve the handle to get weapon data
-            # For now, return a placeholder based on player state
-            return self.get_weapon_from_state(pawn)
-        except:
-            return "?"
-    
-    def get_weapon_from_state(self, pawn: int) -> str:
-        """Placeholder weapon detection - in practice you'd resolve the weapon entity"""
-        # This is a simplified version - real weapon detection requires more work
-        try:
-            # Check if scoped (likely sniper)
-            is_scoped = self.read_int(pawn + Netvars.m_bIsScoped)
+            is_scoped = self.read_int(pawn + self.config.get_offset('netvars.m_bIsScoped'))
             if is_scoped:
                 return "SNIPER"
             
-            # Check shots fired (if high, likely automatic)
-            shots = self.read_int(pawn + Netvars.m_iShotsFired)
+            shots = self.read_int(pawn + self.config.get_offset('netvars.m_iShotsFired'))
             if shots > 5:
                 return "AUTO"
             
@@ -247,7 +349,7 @@ class TerminalRadar:
             return "?"
     
     def get_players(self) -> List[Dict]:
-        """Get all players with positions and metadata"""
+        """Get all players using loaded offsets"""
         players = []
         local_info = self.get_local_player()
         
@@ -255,11 +357,10 @@ class TerminalRadar:
             return players
         
         local_team, local_pos, local_angles = local_info
-        entity_list = self.client_base + ClientDll.dwEntityList
+        entity_list = self.client_base + self.config.get_offset('client_dll.dwEntityList')
         
         for i in range(1, 65):
             try:
-                # Complex entity resolution (CS2 specific)
                 list_entry = self.read_longlong(
                     entity_list + (8 * (i & 0x7FFF) >> 9) + 16
                 )
@@ -273,7 +374,7 @@ class TerminalRadar:
                     continue
                 
                 pawn_handle = self.read_int(
-                    controller + Netvars.m_hPlayerPawn
+                    controller + self.config.get_offset('netvars.m_hPlayerPawn')
                 )
                 if not pawn_handle:
                     continue
@@ -292,21 +393,18 @@ class TerminalRadar:
                 if not pawn:
                     continue
                 
-                # Read player data
-                health = self.read_int(pawn + Netvars.m_iHealth)
+                health = self.read_int(pawn + self.config.get_offset('netvars.m_iHealth'))
                 if health <= 0 or health > 100:
                     continue
                 
-                team = self.read_int(pawn + Netvars.m_iTeamNum)
-                pos = self.read_vector(pawn + Netvars.m_vOldOrigin)
+                team = self.read_int(pawn + self.config.get_offset('netvars.m_iTeamNum'))
+                pos = self.read_vector(pawn + self.config.get_offset('netvars.m_vOldOrigin'))
                 
                 if not pos:
                     continue
                 
-                # Get weapon
                 weapon = self.get_active_weapon(pawn)
                 
-                # Calculate distance
                 dx = pos[0] - local_pos[0]
                 dy = pos[1] - local_pos[1]
                 distance = math.sqrt(dx*dx + dy*dy)
@@ -322,50 +420,42 @@ class TerminalRadar:
                     'is_local': pawn == local_info[0] if local_info[0] else False
                 })
                 
-            except Exception as e:
+            except:
                 continue
         
-        # Sort by distance (closest first)
         players.sort(key=lambda p: p['distance'])
-        self.log("INFO", f"Found {len(players)} players")
         return players
     
     def world_to_radar(self, world_pos: Tuple[float, float, float], 
                       local_pos: Tuple[float, float, float],
                       local_angles: Tuple[float, float]) -> Tuple[int, int]:
-        """
-        Convert world position to radar grid coordinates with rotation
-        Returns (row, col) in the grid
-        """
-        # Calculate relative position (ignore Z/height)
+        """Convert world position to radar grid coordinates"""
         dx = world_pos[0] - local_pos[0]
         dy = world_pos[1] - local_pos[1]
         
-        # Apply rotation based on view angles
         if local_angles:
             yaw_rad = math.radians(local_angles[0])
             cos_yaw = math.cos(yaw_rad)
             sin_yaw = math.sin(yaw_rad)
-            
-            # Rotate coordinates
             rotated_dx = dx * cos_yaw - dy * sin_yaw
             rotated_dy = dx * sin_yaw + dy * cos_yaw
             dx, dy = rotated_dx, rotated_dy
         
-        # Scale to radar size
         grid_x = int(dx / self.scale) + self.radius
         grid_y = int(dy / self.scale) + self.radius
         
-        # Clamp to grid
         grid_x = max(0, min(self.map_size - 1, grid_x))
         grid_y = max(0, min(self.map_size - 1, grid_y))
         
-        return (grid_y, grid_x)  # Return (row, col)
+        return (grid_y, grid_x)
     
     def draw_health_bar(self, health: int, width: int = 5) -> str:
         """Create a visual health bar string"""
         filled = int((health / 100) * width)
         empty = width - filled
+        
+        if not self.colors_enabled:
+            return f"{'█' * filled}{'░' * empty}"
         
         if health > 70:
             color = self.COLORS['BG_GREEN']
@@ -377,24 +467,19 @@ class TerminalRadar:
         return f"{color}{'█' * filled}{self.COLORS['RESET']}{'░' * empty}"
     
     def render_radar(self, players: List[Dict], local_info: Tuple[int, Tuple[float, float, float], Tuple[float, float]]):
-        """Render the radar map to terminal with all features"""
+        """Render the radar map"""
         local_team, local_pos, local_angles = local_info
         
-        # Create empty grid
         grid = [[' ' for _ in range(self.map_size)] for _ in range(self.map_size)]
-        player_data = {}  # Store player info for labels
+        player_data = {}
         
-        # Place players on grid
         for player in players:
             if player['is_local']:
                 continue
             
             row, col = self.world_to_radar(player['position'], local_pos, local_angles)
-            
-            # Store player data for labels
             player_data[(row, col)] = player
             
-            # Choose symbol based on team and health
             if player['is_enemy']:
                 if player['health'] > 70:
                     symbol = 'E'
@@ -407,28 +492,27 @@ class TerminalRadar:
             
             grid[row][col] = symbol
         
-        # Place local player (center)
         grid[self.radius][self.radius] = '@'
         
-        # Clear screen
         os.system('cls' if os.name == 'nt' else 'clear')
         
         # Print header
         print(f"{self.COLORS['BOLD']}{'='*60}{self.COLORS['RESET']}")
         print(f"{self.COLORS['BOLD']}CS2 Radar{self.COLORS['RESET']} - Updated: {datetime.datetime.now().strftime('%H:%M:%S')}")
-        print(f"{self.COLORS['DIM']}Build: 14172 | Press Ctrl+C to exit{self.COLORS['RESET']}")
+        print(f"{self.COLORS['DIM']}Build: {self.config.offsets.get('build', 'Unknown')} | Press Ctrl+C to exit{self.COLORS['RESET']}")
         print(f"{self.COLORS['BOLD']}{'='*60}{self.COLORS['RESET']}")
         
-        # Print map with top border
+        # Print map
         print(f"{self.COLORS['BOLD']}╔{'═' * self.map_size}╗{self.COLORS['RESET']}")
         
-        # Print map rows
         for row_idx in range(self.map_size):
             print(f"{self.COLORS['BOLD']}║{self.COLORS['RESET']}", end='')
             
             for col_idx in range(self.map_size):
                 cell = grid[row_idx][col_idx]
-                if cell == '@':
+                if not self.colors_enabled:
+                    print(cell, end='')
+                elif cell == '@':
                     print(f"{self.COLORS['GREEN']}{cell}{self.COLORS['RESET']}", end='')
                 elif cell == 'E':
                     print(f"{self.COLORS['RED']}{cell}{self.COLORS['RESET']}", end='')
@@ -443,10 +527,9 @@ class TerminalRadar:
             
             print(f"{self.COLORS['BOLD']}║{self.COLORS['RESET']}")
         
-        # Print bottom border
         print(f"{self.COLORS['BOLD']}╚{'═' * self.map_size}╝{self.COLORS['RESET']}")
         
-        # Print stats
+        # Stats
         enemies = [p for p in players if p['is_enemy']]
         allies = [p for p in players if not p['is_enemy'] and not p['is_local']]
         closest_enemy = min(enemies, key=lambda p: p['distance']) if enemies else None
@@ -454,25 +537,27 @@ class TerminalRadar:
         print(f"\n{self.COLORS['BOLD']}Stats:{self.COLORS['RESET']}")
         print(f"  {self.COLORS['RED']}Enemies:{self.COLORS['RESET']} {len(enemies)}")
         print(f"  {self.COLORS['BLUE']}Allies:{self.COLORS['RESET']} {len(allies)}")
-        if closest_enemy:
+        if closest_enemy and self.show_distances:
             print(f"  {self.COLORS['YELLOW']}Closest Enemy:{self.COLORS['RESET']} {closest_enemy['distance']:.1f} units")
         
-        # Print player list with details
-        if players:
+        # Player list
+        if self.show_player_list and players:
             print(f"\n{self.COLORS['BOLD']}Players:{self.COLORS['RESET']}")
             print(f"{self.COLORS['DIM']}{'Type':6} {'HP':6} {'Dist':8} {'Weapon':8} {'Health Bar'}{self.COLORS['RESET']}")
             print(f"{self.COLORS['DIM']}{'-'*40}{self.COLORS['RESET']}")
             
-            for i, player in enumerate(players[:15]):  # Show top 15
+            for player in players[:self.max_players_in_list]:
                 if player['is_local']:
                     continue
                 
                 label = f"{self.COLORS['RED']}ENEMY{self.COLORS['RESET']}" if player['is_enemy'] else f"{self.COLORS['BLUE']}ALLY{self.COLORS['RESET']}"
                 health_bar = self.draw_health_bar(player['health'])
-                print(f"{label:12} {player['health']:3}%  {player['distance']:7.1f}  {player['weapon']:8}  {health_bar}")
+                dist_display = f"{player['distance']:7.1f}" if self.show_distances else "---"
+                weapon_display = player['weapon'] if self.show_weapons else "?"
+                print(f"{label:12} {player['health']:3}%  {dist_display}  {weapon_display:8}  {health_bar}")
         
-        # Print direction indicator
-        if local_angles:
+        # Direction
+        if self.show_direction and local_angles:
             yaw = local_angles[0]
             direction = "NORTH" if -45 < yaw <= 45 else \
                        "EAST" if 45 < yaw <= 135 else \
@@ -480,7 +565,7 @@ class TerminalRadar:
                        "WEST"
             print(f"\n{self.COLORS['BOLD']}Facing:{self.COLORS['RESET']} {direction} ({yaw:.1f}°)")
         
-        # Print legend
+        # Legend
         print(f"\n{self.COLORS['BOLD']}Legend:{self.COLORS['RESET']}")
         print(f"  {self.COLORS['GREEN']}@{self.COLORS['RESET']} = You")
         print(f"  {self.COLORS['RED']}E{self.COLORS['RESET']} = Enemy (HP > 70%)")
@@ -489,7 +574,6 @@ class TerminalRadar:
         print(f"  {self.COLORS['BLUE']}A{self.COLORS['RESET']} = Ally")
         print(f"  {self.COLORS['DIM']}.{self.COLORS['RESET']} = Empty")
         
-        # Log if enemies detected
         if enemies:
             self.log("PLAYERS", f"Found {len(enemies)} enemies")
     
@@ -501,7 +585,10 @@ class TerminalRadar:
         print("⚠️  NEVER use in online matches")
         print("⚠️  Run CS2 with: -insecure -novid -nojoy")
         print("=" * 60)
-        print(f"\nLogging to: {self.log_file}")
+        print(f"\n📁 Config: {self.config.config_file}")
+        print(f"📁 Offsets: {self.config.offsets_file}")
+        if self.log_file:
+            print(f"📝 Logging to: {self.log_file}")
         
         response = input("\nContinue? (yes/no): ")
         if response.lower() != 'yes':
@@ -518,19 +605,14 @@ class TerminalRadar:
         
         try:
             while True:
-                # Get local player
                 local_info = self.get_local_player()
                 if not local_info:
                     print("❌ Lost local player")
                     time.sleep(1)
                     continue
                 
-                # Get all players
                 players = self.get_players()
-                
-                # Render radar
                 self.render_radar(players, local_info)
-                
                 time.sleep(self.update_interval)
                 
         except KeyboardInterrupt:
@@ -543,44 +625,18 @@ class TerminalRadar:
                 self.pm.close_process()
             self.log("INFO", "Clean exit")
             print("✅ Clean exit")
-            print(f"Log saved to: {self.log_file}")
-
-# ===== OFFSET UPDATE CHECK =====
-def check_offsets():
-    """Check if offsets need updating based on the provided offsets.py"""
-    print("Current Offsets (from 2026-07-21, Build 14172):")
-    print(f"  dwLocalPlayerPawn: 0x{ClientDll.dwLocalPlayerPawn:X}")
-    print(f"  dwEntityList: 0x{ClientDll.dwEntityList:X}")
-    print(f"  dwViewAngles: 0x{ClientDll.dwViewAngles:X}")
-    print(f"  dwViewMatrix: 0x{ClientDll.dwViewMatrix:X}")
-    print()
-    print("To update offsets:")
-    print("1. Visit: https://github.com/sezzyaep/CS2-OFFSETS/blob/main/offsets.py")
-    print("2. Copy the new values")
-    print("3. Update the class definitions in this file")
-    print("4. Also check client_dll.json for netvars like m_iHealth, m_iTeamNum, etc.")
 
 if __name__ == "__main__":
-    # Check for pymem
+    # Check for required libraries
     try:
         import pymem
-    except ImportError:
-        print("Installing required library: pymem")
-        os.system("pip install pymem")
-        import pymem
+        import requests
+    except ImportError as e:
+        print(f"❌ Missing required library: {e}")
+        print("Install with: pip install pymem requests")
+        sys.exit(1)
     
-    # Show offset info
-    check_offsets()
-    print("\n" + "="*60 + "\n")
-    
-    # Run radar with all features
-    radar = TerminalRadar(
-        map_size=40,       # Radar size (larger = more detail)
-        update_interval=0.2 # Update speed (lower = faster but more CPU)
-    )
-    
-    # You can customize these settings directly:
-    # radar.scale = 15     # Zoom in more
-    # radar.log_enabled = False  # Disable logging
-    
+    # Run with config
+    config = ConfigManager()
+    radar = TerminalRadar(config)
     radar.run()
