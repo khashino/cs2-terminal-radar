@@ -1,75 +1,85 @@
 # CS2 Terminal Radar 🎯
 
+> Terminal-based radar for Counter-Strike 2 - **Educational purposes only**
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![CS2 Build](https://img.shields.io/badge/CS2-14172-blueviolet.svg)]()
 
-> A terminal-based radar for Counter-Strike 2 - **Educational purposes only**
+## ⚠️ Disclaimer
 
-## ⚠️ Important Disclaimer
-
-**This tool is created for EDUCATIONAL and LEARNING purposes only.**
-
-- ❌ **DO NOT** use this in online matches
-- ❌ **DO NOT** use this to gain an unfair advantage
-- ✅ **DO** use this to learn about game memory, offsets, and visualization
-- ✅ **DO** run CS2 with `-insecure` flag when testing
-
-**Using this in online matches can result in a permanent VAC ban.**
-
-## 📋 Table of Contents
-
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Offsets Management](#offsets-management)
-- [Screenshots](#screenshots)
-- [Safety](#safety)
-- [Contributing](#contributing)
-- [License](#license)
+**EDUCATIONAL USE ONLY.** Never use in online matches. Run CS2 with `-insecure` flag when testing. Using this online will result in a VAC ban.
 
 ## ✨ Features
 
-- **Real-time Radar** - Top-down 2D map in your terminal
-- **Direction Indicator** - Shows which way you're facing (N/E/S/W)
-- **Distance Labels** - Displays distance to each player in units
-- **Health Bars** - Visual health indicators (Green/Yellow/Red)
-- **Weapon Detection** - Shows enemy weapon types (placeholder)
-- **Player List** - Detailed list with health, distance, and weapons
-- **Map Rotation** - Rotates based on your view angle
-- **Automatic Logging** - Saves radar data to timestamped log files
-- **Cross-platform** - Works on Windows, Linux, and macOS
+- Real-time top-down radar in terminal
+- Direction indicator (N/E/S/W)
+- Distance to players
+- Health bars (Green/Yellow/Red)
+- Weapon detection
+- Auto-updating offsets from GitHub
+- Configurable via JSON
 
-## 🧠 How It Works
+## 📁 Structure
+```
+cs2-terminal-radar/
+├── cs2_radar.py # Main app
+├── config.json # Settings (auto-created)
+├── offsets.json # Game offsets (auto-downloaded)
+└── update_offsets.py # Manual offset updater
+```
 
-The radar reads CS2's memory to get player positions and displays them in your terminal. It uses:
-
-1. **Memory Reading** - Reads player data from CS2 process memory
-2. **Offset System** - Uses the latest offsets from [CS2-OFFSETS](https://github.com/sezzyaep/CS2-OFFSETS)
-3. **Projection Math** - Converts 3D world positions to 2D radar coordinates
-4. **Terminal Rendering** - Displays everything using ANSI colors and Unicode characters
-
-Unlike traditional ESP overlays, this runs in your terminal - making it significantly safer and looking like a development tool.
-
-## 📦 Installation
-
-### Prerequisites
-
-- Python 3.8 or higher
-- CS2 installed and running (with `-insecure` flag)
-
-### Quick Install
+## 🚀 Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/cs2-terminal-radar.git
+# Clone and install
+git clone https://github.com/khashino/cs2-terminal-radar.git
 cd cs2-terminal-radar
+pip install pymem requests
 
-# Install dependencies
-pip install pymem psutil
-
-# Run the radar
+# Run (config/offsets auto-generate)
 python cs2_radar.py
+```
+
+## ⚙️ Configuration
+Edit config.json to customize:
+
+```
+{
+  "radar": {
+    "map_size": 40,           // Grid size
+    "update_interval": 0.2,   // Update speed
+    "scale": 20,              // Zoom level
+    "colors_enabled": true
+  },
+  "display": {
+    "show_health_bars": true,
+    "show_weapons": true,
+    "show_distances": true,
+    "show_direction": true
+  },
+  "offsets_source": {
+    "auto_update": true       // Auto-fetch from GitHub
+  }
+}
+```
+## 🎮 Usage
+Launch CS2 with: -insecure -novid -nojoy
+```
+Run: python cs2_radar.py
+```
+Press Ctrl+C to exit
+
+## Quick Start
+
+```bash
+git clone https://github.com/khashino/cs2-terminal-radar.git
+cd cs2-terminal-radar
+pip install pymem requests
+python cs2_radar.py
+```
+
+## Config
+Edit config.json to customize map size, zoom, colors, etc.
+
+## License
+MIT
