@@ -1,6 +1,5 @@
 """
-CS2 Terminal Radar - Educational Tool
-Loads configuration and offsets from external JSON files
+CS2 Terminal Radar - Using Working Pattern from the ESP Code
 """
 
 import pymem
@@ -9,216 +8,35 @@ import math
 import time
 import os
 import sys
-import json
-import datetime
+import ctypes
+from ctypes import wintypes
+import psutil
 import requests
-from typing import Optional, Tuple, List, Dict
+import json
 
-class ConfigManager:
-    """Manages configuration and offsets loading"""
-    
-    def __init__(self, config_file="config.json", offsets_file="offsets.json"):
-        self.config_file = config_file
-        self.offsets_file = offsets_file
-        self.config = {}
-        self.offsets = {}
-        self.load_config()
-        self.load_offsets()
-    
-    def load_config(self):
-        """Load configuration from JSON file"""
-        try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as f:
-                    self.config = json.load(f)
-            else:
-                print(f"⚠️  Config file {self.config_file} not found. Using defaults.")
-                self.config = self.get_default_config()
-                self.save_config()
-        except Exception as e:
-            print(f"❌ Error loading config: {e}")
-            self.config = self.get_default_config()
-    
-    def get_default_config(self):
-        """Return default configuration"""
-        return {
-            "radar": {
-                "map_size": 40,
-                "update_interval": 0.2,
-                "scale": 20,
-                "log_enabled": True,
-                "colors_enabled": True
-            },
-            "display": {
-                "show_health_bars": True,
-                "show_weapons": True,
-                "show_distances": True,
-                "show_direction": True,
-                "show_player_list": True,
-                "max_players_in_list": 15
-            },
-            "safety": {
-                "require_insecure": True,
-                "read_only_mode": True
-            },
-            "offsets_source": {
-                "url": "https://raw.githubusercontent.com/sezzyaep/CS2-OFFSETS/main/offsets.json",
-                "local_file": "offsets.json",
-                "auto_update": True,
-                "update_check_interval": 86400
-            },
-            "logging": {
-                "enabled": True,
-                "log_file_prefix": "radar_log",
-                "log_level": "INFO",
-                "max_log_files": 10
-            }
-        }
-    
-    def save_config(self):
-        """Save current configuration to file"""
-        try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self.config, f, indent=2)
-        except Exception as e:
-            print(f"⚠️  Could not save config: {e}")
-    
-    def load_offsets(self):
-        """Load offsets from JSON file or fetch from GitHub"""
-        source = self.config.get("offsets_source", {})
-        local_file = source.get("local_file", "offsets.json")
-        auto_update = source.get("auto_update", True)
-        
-        # Try to load local offsets file
-        if os.path.exists(local_file):
-            try:
-                with open(local_file, 'r') as f:
-                    self.offsets = json.load(f)
-                print(f"✅ Loaded offsets from {local_file}")
-                print(f"   Build: {self.offsets.get('build', 'Unknown')}")
-                print(f"   Timestamp: {self.offsets.get('timestamp', 'Unknown')}")
-                return True
-            except Exception as e:
-                print(f"⚠️  Error loading offsets file: {e}")
-        
-        # Try to fetch from GitHub if auto_update is enabled
-        if auto_update:
-            url = source.get("url")
-            if url:
-                print(f"🔄 Fetching offsets from GitHub...")
-                try:
-                    response = requests.get(url, timeout=5)
-                    if response.status_code == 200:
-                        self.offsets = response.json()
-                        # Save to local file
-                        with open(local_file, 'w') as f:
-                            json.dump(self.offsets, f, indent=2)
-                        print(f"✅ Downloaded and saved offsets")
-                        print(f"   Build: {self.offsets.get('build', 'Unknown')}")
-                        print(f"   Timestamp: {self.offsets.get('timestamp', 'Unknown')}")
-                        return True
-                    else:
-                        print(f"❌ Failed to fetch offsets: HTTP {response.status_code}")
-                except Exception as e:
-                    print(f"❌ Error fetching offsets: {e}")
-        
-        print("❌ Could not load offsets. Using hardcoded fallback values.")
-        self.offsets = self.get_fallback_offsets()
-        return False
-    
-    def get_fallback_offsets(self):
-        """Return hardcoded fallback offsets"""
-        return {
-            "timestamp": "Unknown",
-            "build": 0,
-            "client_dll": {
-                "dwLocalPlayerPawn": "0x23A5238",
-                "dwEntityList": "0x254FE70",
-                "dwViewAngles": "0x23BAE18",
-                "dwViewMatrix": "0x23AA340"
-            },
-            "netvars": {
-                "m_iHealth": "0x344",
-                "m_iTeamNum": "0x3E3",
-                "m_vOldOrigin": "0x1324",
-                "m_hPlayerPawn": "0x814"
-            }
-        }
-    
-    def get(self, key, default=None):
-        """Get config value by dot notation (e.g., 'radar.map_size')"""
-        keys = key.split('.')
-        value = self.config
-        for k in keys:
-            if isinstance(value, dict):
-                value = value.get(k, default)
-            else:
-                return default
-        return value
-    
-    def get_offset(self, key, default="0x0"):
-        """Get offset value by dot notation (e.g., 'client_dll.dwLocalPlayerPawn')"""
-        keys = key.split('.')
-        value = self.offsets
-        for k in keys:
-            if isinstance(value, dict):
-                value = value.get(k, default)
-            else:
-                return int(default, 16) if isinstance(default, str) and default.startswith('0x') else default
-        
-        # Convert hex string to int
-        if isinstance(value, str) and value.startswith('0x'):
-            return int(value, 16)
-        return value
+PROCESS_VM_READ = 0x0010
+PROCESS_QUERY_INFORMATION = 0x0400
 
 class TerminalRadar:
-    """Main radar class with external config and offsets"""
-    
-    def __init__(self, config_manager=None):
-        self.config = config_manager or ConfigManager()
-        self.map_size = self.config.get('radar.map_size', 40)
-        self.update_interval = self.config.get('radar.update_interval', 0.2)
+    def __init__(self):
+        self.map_size = 40
+        self.update_interval = 0.2
         self.radius = self.map_size // 2
-        self.scale = self.config.get('radar.scale', 20)
-        self.log_enabled = self.config.get('radar.log_enabled', True)
-        self.colors_enabled = self.config.get('radar.colors_enabled', True)
+        self.scale = 20
         
-        # Display settings
-        self.show_health_bars = self.config.get('display.show_health_bars', True)
-        self.show_weapons = self.config.get('display.show_weapons', True)
-        self.show_distances = self.config.get('display.show_distances', True)
-        self.show_direction = self.config.get('display.show_direction', True)
-        self.show_player_list = self.config.get('display.show_player_list', True)
-        self.max_players_in_list = self.config.get('display.max_players_in_list', 15)
+        # Load offsets from dumper
+        self.load_offsets()
         
-        # Logging settings
-        self.log_prefix = self.config.get('logging.log_file_prefix', 'radar_log')
-        self.log_level = self.config.get('logging.log_level', 'INFO')
-        self.max_log_files = self.config.get('logging.max_log_files', 10)
-        
-        self.rotation_angle = 0
-        self.log_file = None
         self.pm = None
         self.client_base = None
-        self.engine_base = None
         self.is_connected = False
         
-        # Initialize logging
-        if self.log_enabled:
-            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-            self.log_file = f"{self.log_prefix}_{timestamp}.txt"
-            self.cleanup_old_logs()
-        
-        # Colors
         self.COLORS = {
             'RESET': '\033[0m',
             'RED': '\033[91m',
             'GREEN': '\033[92m',
             'YELLOW': '\033[93m',
             'BLUE': '\033[94m',
-            'MAGENTA': '\033[95m',
-            'CYAN': '\033[96m',
-            'WHITE': '\033[97m',
             'BOLD': '\033[1m',
             'DIM': '\033[2m',
             'BG_RED': '\033[41m',
@@ -226,210 +44,263 @@ class TerminalRadar:
             'BG_YELLOW': '\033[43m',
         }
     
-    def cleanup_old_logs(self):
-        """Remove old log files to prevent clutter"""
+    def load_offsets(self):
+        """Load offsets from a2x dumper"""
         try:
-            log_files = sorted([f for f in os.listdir('.') if f.startswith(self.log_prefix)])
-            if len(log_files) > self.max_log_files:
-                for f in log_files[:-self.max_log_files]:
-                    os.remove(f)
-        except:
-            pass
-    
-    def connect(self) -> bool:
-        """Connect to CS2 process"""
-        try:
-            self.pm = pymem.Pymem("cs2.exe")
+            print("🔄 Loading offsets from dumper...")
+            offsets = requests.get(
+                "https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/offsets.json",
+                timeout=5
+            ).json()
+            client_dll = requests.get(
+                "https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/client_dll.json",
+                timeout=5
+            ).json()
             
+            # From offsets.json
+            self.dwEntityList = offsets["client.dll"]["dwEntityList"]
+            self.dwLocalPlayerController = offsets["client.dll"]["dwLocalPlayerController"]
+            self.dwLocalPlayerPawn = offsets["client.dll"]["dwLocalPlayerPawn"]
+            self.dwViewMatrix = offsets["client.dll"]["dwViewMatrix"]
+            self.dwViewAngles = offsets["client.dll"]["dwViewAngles"]
+            
+            # From client_dll.json - C_BaseEntity
+            self.m_iHealth = client_dll["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_iHealth"]
+            self.m_iTeamNum = client_dll["client.dll"]["classes"]["C_BaseEntity"]["fields"]["m_iTeamNum"]
+            
+            # From client_dll.json - C_BasePlayerPawn
+            self.m_vOldOrigin = client_dll["client.dll"]["classes"]["C_BasePlayerPawn"]["fields"]["m_vOldOrigin"]
+            
+            # From client_dll.json - CCSPlayerController
+            self.m_hPlayerPawn = client_dll["client.dll"]["classes"]["CCSPlayerController"]["fields"]["m_hPlayerPawn"]
+            
+            print(f"✅ Loaded offsets:")
+            print(f"   dwEntityList: 0x{self.dwEntityList:X}")
+            print(f"   dwLocalPlayerController: 0x{self.dwLocalPlayerController:X}")
+            print(f"   dwLocalPlayerPawn: 0x{self.dwLocalPlayerPawn:X}")
+            print(f"   m_iHealth: 0x{self.m_iHealth:X}")
+            print(f"   m_iTeamNum: 0x{self.m_iTeamNum:X}")
+            print(f"   m_vOldOrigin: 0x{self.m_vOldOrigin:X}")
+            print(f"   m_hPlayerPawn: 0x{self.m_hPlayerPawn:X}")
+            
+            return True
+        except Exception as e:
+            print(f"❌ Failed to load offsets: {e}")
+            print("   Using fallback offsets...")
+            # Fallback offsets
+            self.dwEntityList = 0x254FE70
+            self.dwLocalPlayerController = 0x237FB70
+            self.dwLocalPlayerPawn = 0x23A5238
+            self.dwViewMatrix = 0x23AA340
+            self.dwViewAngles = 0x23BAE18
+            self.m_iHealth = 0x348
+            self.m_iTeamNum = 0x3E3
+            self.m_vOldOrigin = 0x13A0
+            self.m_hPlayerPawn = 0x814
+            return False
+    
+    def connect(self):
+        try:
+            # Find CS2
+            pid = None
+            for proc in psutil.process_iter(['pid', 'name']):
+                if proc.info['name'] == 'cs2.exe':
+                    pid = proc.info['pid']
+                    break
+            
+            if not pid:
+                print("❌ CS2 process not found")
+                return False
+            
+            # Open process with read permissions
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(
+                PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, 
+                False, 
+                pid
+            )
+            
+            if not handle:
+                print("❌ Failed to open process. Run as Administrator!")
+                return False
+            
+            self.pm = pymem.Pymem()
+            self.pm.process_handle = handle
+            self.pm.process_id = pid
+            
+            # Get client.dll base
             client_module = pymem.process.module_from_name(
                 self.pm.process_handle, "client.dll"
             )
             if not client_module:
+                print("❌ client.dll not found")
                 return False
+            
             self.client_base = client_module.lpBaseOfDll
-            
-            engine_module = pymem.process.module_from_name(
-                self.pm.process_handle, "engine2.dll"
-            )
-            if engine_module:
-                self.engine_base = engine_module.lpBaseOfDll
-            
             self.is_connected = True
-            self.log("INFO", "Connected to CS2 successfully")
+            
+            print(f"✅ Connected to CS2 (PID: {pid})")
+            print(f"   Client.dll base: 0x{self.client_base:X}")
             return True
+            
         except Exception as e:
-            self.log("ERROR", f"Connection failed: {e}")
+            print(f"❌ Connection error: {e}")
             return False
     
-    def log(self, level: str, message: str):
-        """Write to log file"""
-        if not self.log_enabled or not self.log_file:
-            return
+    def read_int(self, addr):
         try:
-            if level == "INFO" and self.log_level != "INFO":
-                return
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with open(self.log_file, 'a') as f:
-                f.write(f"[{timestamp}] [{level}] {message}\n")
-        except:
-            pass
-    
-    # [Continue with all the reading methods from the previous code]
-    def read_int(self, address: int) -> int:
-        try:
-            return self.pm.read_int(address)
+            return self.pm.read_int(addr)
         except:
             return 0
     
-    def read_longlong(self, address: int) -> int:
+    def read_longlong(self, addr):
         try:
-            return self.pm.read_longlong(address)
+            return self.pm.read_longlong(addr)
         except:
             return 0
     
-    def read_float(self, address: int) -> float:
+    def read_float(self, addr):
         try:
-            return self.pm.read_float(address)
+            return self.pm.read_float(addr)
         except:
             return 0.0
     
-    def read_vector(self, address: int) -> Optional[Tuple[float, float, float]]:
+    def read_vector(self, addr):
         try:
-            x = self.read_float(address)
-            y = self.read_float(address + 0x4)
-            z = self.read_float(address + 0x8)
+            x = self.read_float(addr)
+            y = self.read_float(addr + 4)
+            z = self.read_float(addr + 8)
             return (x, y, z)
         except:
             return None
     
-    def get_view_angles(self) -> Optional[Tuple[float, float]]:
-        """Get player view angles using loaded offsets"""
+    def get_view_angles(self):
         try:
-            angles_addr = self.client_base + self.config.get_offset('client_dll.dwViewAngles')
+            angles_addr = self.client_base + self.dwViewAngles
             yaw = self.read_float(angles_addr)
-            pitch = self.read_float(angles_addr + 0x4)
+            pitch = self.read_float(angles_addr + 4)
             return (yaw, pitch)
         except:
             return None
     
-    def get_local_player(self) -> Optional[Tuple[int, Tuple[float, float, float], Tuple[float, float]]]:
-        """Get local player info using loaded offsets"""
+    def resolve_pawn_handle(self, pawn_handle):
+        """Resolve pawn handle to pawn address using the proper method"""
         try:
-            local_pawn = self.read_longlong(
-                self.client_base + self.config.get_offset('client_dll.dwLocalPlayerPawn')
+            entity_list = self.client_base + self.dwEntityList
+            # This is the key part - resolving the handle
+            pawn_entry = self.read_longlong(
+                entity_list + 0x10 + 
+                8 * ((pawn_handle & 0x7FFF) >> 9) + 
+                0x70 * (pawn_handle & 0x1FF)
             )
+            if not pawn_entry:
+                return None
+            pawn = self.read_longlong(
+                pawn_entry + 0x78 * (pawn_handle & 0x1FF)
+            )
+            return pawn
+        except:
+            return None
+    
+    def get_local_player(self):
+        try:
+            # Read local player controller
+            local_controller = self.read_longlong(
+                self.client_base + self.dwLocalPlayerController
+            )
+            if not local_controller:
+                return None
+            
+            # Get pawn handle from controller
+            pawn_handle = self.read_int(local_controller + self.m_hPlayerPawn)
+            if not pawn_handle:
+                return None
+            
+            # Resolve pawn
+            local_pawn = self.resolve_pawn_handle(pawn_handle)
             if not local_pawn:
                 return None
             
-            team = self.read_int(local_pawn + self.config.get_offset('netvars.m_iTeamNum'))
-            pos = self.read_vector(local_pawn + self.config.get_offset('netvars.m_vOldOrigin'))
-            angles = self.get_view_angles()
+            # Read pawn data
+            health = self.read_int(local_pawn + self.m_iHealth)
+            if health <= 0 or health > 100:
+                return None
+            
+            team = self.read_int(local_pawn + self.m_iTeamNum)
+            pos = self.read_vector(local_pawn + self.m_vOldOrigin)
             
             if not pos:
                 return None
             
-            return (team, pos, angles)
-        except Exception as e:
-            self.log("ERROR", f"get_local_player failed: {e}")
+            return {
+                'pawn': local_pawn,
+                'controller': local_controller,
+                'health': health,
+                'team': team,
+                'position': pos
+            }
+        except:
             return None
     
-    def get_active_weapon(self, pawn: int) -> str:
-        """Placeholder weapon detection"""
-        try:
-            is_scoped = self.read_int(pawn + self.config.get_offset('netvars.m_bIsScoped'))
-            if is_scoped:
-                return "SNIPER"
-            
-            shots = self.read_int(pawn + self.config.get_offset('netvars.m_iShotsFired'))
-            if shots > 5:
-                return "AUTO"
-            
-            return "PISTOL"
-        except:
-            return "?"
-    
-    def get_players(self) -> List[Dict]:
-        """Get all players using loaded offsets"""
+    def get_players(self):
         players = []
-        local_info = self.get_local_player()
+        local = self.get_local_player()
         
-        if not local_info:
+        if not local:
             return players
         
-        local_team, local_pos, local_angles = local_info
-        entity_list = self.client_base + self.config.get_offset('client_dll.dwEntityList')
+        entity_list = self.client_base + self.dwEntityList
         
         for i in range(1, 65):
             try:
-                list_entry = self.read_longlong(
-                    entity_list + (8 * (i & 0x7FFF) >> 9) + 16
-                )
-                if not list_entry:
-                    continue
-                
-                controller = self.read_longlong(
-                    list_entry + 120 * (i & 0x1FF)
-                )
+                # Read controller from entity list
+                controller = self.read_longlong(entity_list + i * 0x10)
                 if not controller:
                     continue
                 
-                pawn_handle = self.read_int(
-                    controller + self.config.get_offset('netvars.m_hPlayerPawn')
-                )
+                # Skip local player controller
+                if controller == local['controller']:
+                    continue
+                
+                # Get pawn handle from controller
+                pawn_handle = self.read_int(controller + self.m_hPlayerPawn)
                 if not pawn_handle:
                     continue
                 
-                pawn_entry = self.read_longlong(
-                    entity_list + 0x10 + 
-                    8 * ((pawn_handle & 0x7FFF) >> 9) + 
-                    0x70 * (pawn_handle & 0x1FF)
-                )
-                if not pawn_entry:
-                    continue
-                
-                pawn = self.read_longlong(
-                    pawn_entry + 0x78 * (pawn_handle & 0x1FF)
-                )
+                # Resolve pawn
+                pawn = self.resolve_pawn_handle(pawn_handle)
                 if not pawn:
                     continue
                 
-                health = self.read_int(pawn + self.config.get_offset('netvars.m_iHealth'))
+                # Read pawn data
+                health = self.read_int(pawn + self.m_iHealth)
                 if health <= 0 or health > 100:
                     continue
                 
-                team = self.read_int(pawn + self.config.get_offset('netvars.m_iTeamNum'))
-                pos = self.read_vector(pawn + self.config.get_offset('netvars.m_vOldOrigin'))
+                team = self.read_int(pawn + self.m_iTeamNum)
+                pos = self.read_vector(pawn + self.m_vOldOrigin)
                 
                 if not pos:
                     continue
                 
-                weapon = self.get_active_weapon(pawn)
-                
-                dx = pos[0] - local_pos[0]
-                dy = pos[1] - local_pos[1]
+                dx = pos[0] - local['position'][0]
+                dy = pos[1] - local['position'][1]
                 distance = math.sqrt(dx*dx + dy*dy)
                 
                 players.append({
-                    'pawn': pawn,
                     'health': health,
                     'team': team,
                     'position': pos,
-                    'weapon': weapon,
                     'distance': distance,
-                    'is_enemy': team != local_team,
-                    'is_local': pawn == local_info[0] if local_info[0] else False
+                    'is_enemy': team != local['team']
                 })
                 
             except:
                 continue
         
-        players.sort(key=lambda p: p['distance'])
         return players
     
-    def world_to_radar(self, world_pos: Tuple[float, float, float], 
-                      local_pos: Tuple[float, float, float],
-                      local_angles: Tuple[float, float]) -> Tuple[int, int]:
-        """Convert world position to radar grid coordinates"""
+    def world_to_radar(self, world_pos, local_pos, local_angles):
         dx = world_pos[0] - local_pos[0]
         dy = world_pos[1] - local_pos[1]
         
@@ -449,13 +320,9 @@ class TerminalRadar:
         
         return (grid_y, grid_x)
     
-    def draw_health_bar(self, health: int, width: int = 5) -> str:
-        """Create a visual health bar string"""
+    def draw_health_bar(self, health, width=5):
         filled = int((health / 100) * width)
         empty = width - filled
-        
-        if not self.colors_enabled:
-            return f"{'█' * filled}{'░' * empty}"
         
         if health > 70:
             color = self.COLORS['BG_GREEN']
@@ -466,19 +333,12 @@ class TerminalRadar:
         
         return f"{color}{'█' * filled}{self.COLORS['RESET']}{'░' * empty}"
     
-    def render_radar(self, players: List[Dict], local_info: Tuple[int, Tuple[float, float, float], Tuple[float, float]]):
-        """Render the radar map"""
-        local_team, local_pos, local_angles = local_info
-        
+    def render(self, players, local):
+        local_angles = self.get_view_angles()
         grid = [[' ' for _ in range(self.map_size)] for _ in range(self.map_size)]
-        player_data = {}
         
         for player in players:
-            if player['is_local']:
-                continue
-            
-            row, col = self.world_to_radar(player['position'], local_pos, local_angles)
-            player_data[(row, col)] = player
+            row, col = self.world_to_radar(player['position'], local['position'], local_angles)
             
             if player['is_enemy']:
                 if player['health'] > 70:
@@ -496,13 +356,11 @@ class TerminalRadar:
         
         os.system('cls' if os.name == 'nt' else 'clear')
         
-        # Print header
         print(f"{self.COLORS['BOLD']}{'='*60}{self.COLORS['RESET']}")
-        print(f"{self.COLORS['BOLD']}CS2 Radar{self.COLORS['RESET']} - Updated: {datetime.datetime.now().strftime('%H:%M:%S')}")
-        print(f"{self.COLORS['DIM']}Build: {self.config.offsets.get('build', 'Unknown')} | Press Ctrl+C to exit{self.COLORS['RESET']}")
+        print(f"{self.COLORS['BOLD']}CS2 Radar{self.COLORS['RESET']} - {time.strftime('%H:%M:%S')}")
+        print(f"{self.COLORS['DIM']}Players: {len(players)} | Using working pattern from ESP code{self.COLORS['RESET']}")
         print(f"{self.COLORS['BOLD']}{'='*60}{self.COLORS['RESET']}")
         
-        # Print map
         print(f"{self.COLORS['BOLD']}╔{'═' * self.map_size}╗{self.COLORS['RESET']}")
         
         for row_idx in range(self.map_size):
@@ -510,9 +368,7 @@ class TerminalRadar:
             
             for col_idx in range(self.map_size):
                 cell = grid[row_idx][col_idx]
-                if not self.colors_enabled:
-                    print(cell, end='')
-                elif cell == '@':
+                if cell == '@':
                     print(f"{self.COLORS['GREEN']}{cell}{self.COLORS['RESET']}", end='')
                 elif cell == 'E':
                     print(f"{self.COLORS['RED']}{cell}{self.COLORS['RESET']}", end='')
@@ -529,35 +385,27 @@ class TerminalRadar:
         
         print(f"{self.COLORS['BOLD']}╚{'═' * self.map_size}╝{self.COLORS['RESET']}")
         
-        # Stats
         enemies = [p for p in players if p['is_enemy']]
-        allies = [p for p in players if not p['is_enemy'] and not p['is_local']]
+        allies = [p for p in players if not p['is_enemy']]
         closest_enemy = min(enemies, key=lambda p: p['distance']) if enemies else None
         
         print(f"\n{self.COLORS['BOLD']}Stats:{self.COLORS['RESET']}")
         print(f"  {self.COLORS['RED']}Enemies:{self.COLORS['RESET']} {len(enemies)}")
         print(f"  {self.COLORS['BLUE']}Allies:{self.COLORS['RESET']} {len(allies)}")
-        if closest_enemy and self.show_distances:
+        if closest_enemy:
             print(f"  {self.COLORS['YELLOW']}Closest Enemy:{self.COLORS['RESET']} {closest_enemy['distance']:.1f} units")
         
-        # Player list
-        if self.show_player_list and players:
+        if players:
             print(f"\n{self.COLORS['BOLD']}Players:{self.COLORS['RESET']}")
-            print(f"{self.COLORS['DIM']}{'Type':6} {'HP':6} {'Dist':8} {'Weapon':8} {'Health Bar'}{self.COLORS['RESET']}")
-            print(f"{self.COLORS['DIM']}{'-'*40}{self.COLORS['RESET']}")
+            print(f"{self.COLORS['DIM']}{'Type':6} {'HP':6} {'Dist':8} {'Health Bar'}{self.COLORS['RESET']}")
+            print(f"{self.COLORS['DIM']}{'-'*35}{self.COLORS['RESET']}")
             
-            for player in players[:self.max_players_in_list]:
-                if player['is_local']:
-                    continue
-                
+            for player in players[:15]:
                 label = f"{self.COLORS['RED']}ENEMY{self.COLORS['RESET']}" if player['is_enemy'] else f"{self.COLORS['BLUE']}ALLY{self.COLORS['RESET']}"
                 health_bar = self.draw_health_bar(player['health'])
-                dist_display = f"{player['distance']:7.1f}" if self.show_distances else "---"
-                weapon_display = player['weapon'] if self.show_weapons else "?"
-                print(f"{label:12} {player['health']:3}%  {dist_display}  {weapon_display:8}  {health_bar}")
+                print(f"{label:12} {player['health']:3}%  {player['distance']:7.1f}  {health_bar}")
         
-        # Direction
-        if self.show_direction and local_angles:
+        if local_angles:
             yaw = local_angles[0]
             direction = "NORTH" if -45 < yaw <= 45 else \
                        "EAST" if 45 < yaw <= 135 else \
@@ -565,7 +413,6 @@ class TerminalRadar:
                        "WEST"
             print(f"\n{self.COLORS['BOLD']}Facing:{self.COLORS['RESET']} {direction} ({yaw:.1f}°)")
         
-        # Legend
         print(f"\n{self.COLORS['BOLD']}Legend:{self.COLORS['RESET']}")
         print(f"  {self.COLORS['GREEN']}@{self.COLORS['RESET']} = You")
         print(f"  {self.COLORS['RED']}E{self.COLORS['RESET']} = Enemy (HP > 70%)")
@@ -573,70 +420,56 @@ class TerminalRadar:
         print(f"  {self.COLORS['DIM']}x{self.COLORS['RESET']} = Enemy (HP < 30%)")
         print(f"  {self.COLORS['BLUE']}A{self.COLORS['RESET']} = Ally")
         print(f"  {self.COLORS['DIM']}.{self.COLORS['RESET']} = Empty")
-        
-        if enemies:
-            self.log("PLAYERS", f"Found {len(enemies)} enemies")
     
     def run(self):
-        """Main radar loop"""
-        print("CS2 Terminal Radar - Educational Tool")
         print("=" * 60)
-        print("⚠️  This is for EDUCATIONAL purposes ONLY")
-        print("⚠️  NEVER use in online matches")
-        print("⚠️  Run CS2 with: -insecure -novid -nojoy")
+        print("CS2 Terminal Radar - Working Pattern")
         print("=" * 60)
-        print(f"\n📁 Config: {self.config.config_file}")
-        print(f"📁 Offsets: {self.config.offsets_file}")
-        if self.log_file:
-            print(f"📝 Logging to: {self.log_file}")
+        print("⚠️  Educational purposes only")
+        print("⚠️  Run this as Administrator")
+        print("=" * 60)
         
         response = input("\nContinue? (yes/no): ")
         if response.lower() != 'yes':
-            print("Exiting...")
             return
         
         if not self.connect():
-            print("❌ Failed to connect to CS2")
+            print("❌ Failed to connect")
             return
         
-        print("✅ Connected to CS2!")
-        print("Starting radar (press Ctrl+C to stop)...\n")
+        print("\n✅ Starting radar... Press Ctrl+C to stop\n")
         time.sleep(1)
         
         try:
             while True:
-                local_info = self.get_local_player()
-                if not local_info:
-                    print("❌ Lost local player")
+                local = self.get_local_player()
+                if not local:
+                    print("\r❌ Waiting for player...", end="")
                     time.sleep(1)
                     continue
                 
                 players = self.get_players()
-                self.render_radar(players, local_info)
+                self.render(players, local)
                 time.sleep(self.update_interval)
                 
         except KeyboardInterrupt:
             print("\n\n🛑 Stopped by user")
         except Exception as e:
             print(f"\n❌ Error: {e}")
-            self.log("ERROR", f"Runtime error: {e}")
         finally:
-            if self.pm:
-                self.pm.close_process()
-            self.log("INFO", "Clean exit")
+            if self.pm and hasattr(self.pm, 'process_handle'):
+                ctypes.windll.kernel32.CloseHandle(self.pm.process_handle)
             print("✅ Clean exit")
 
 if __name__ == "__main__":
-    # Check for required libraries
     try:
         import pymem
+        import psutil
         import requests
     except ImportError as e:
-        print(f"❌ Missing required library: {e}")
-        print("Install with: pip install pymem requests")
+        print(f"❌ Missing library: {e}")
+        print("Install with: pip install pymem psutil requests")
         sys.exit(1)
     
-    # Run with config
-    config = ConfigManager()
-    radar = TerminalRadar(config)
+    radar = TerminalRadar()
     radar.run()
