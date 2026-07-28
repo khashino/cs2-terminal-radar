@@ -311,10 +311,10 @@ class GuiRadar(TerminalRadar):
         ):
             dx = player["position"][0] - local["position"][0]
             dy = player["position"][1] - local["position"][1]
-            rotated_x = dx * cos_yaw - dy * sin_yaw
-            rotated_y = dx * sin_yaw + dy * cos_yaw
-            px = cx + max(-1.0, min(1.0, rotated_x / world_radius)) * radius
-            py = cy + max(-1.0, min(1.0, rotated_y / world_radius)) * radius
+            forward = dx * cos_yaw + dy * sin_yaw
+            right = dx * sin_yaw - dy * cos_yaw
+            px = cx + max(-1.0, min(1.0, right / world_radius)) * radius
+            py = cy - max(-1.0, min(1.0, forward / world_radius)) * radius
             color = self.RED if player["is_enemy"] else self.BLUE
             marker = 7 if player["is_enemy"] else 6
             self.canvas.create_oval(
