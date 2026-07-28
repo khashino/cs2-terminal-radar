@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
 
-from cs2_radar import TerminalRadar
+from main import TerminalRadar
 
 
 class GuiRadar(TerminalRadar):
@@ -39,10 +39,10 @@ class GuiRadar(TerminalRadar):
         self.canvas = None
         self.contact_canvas = None
         self.running = False
-        self.view_mode = str(self.gui_config.get("view_mode", "radar")).lower()
-        if self.view_mode not in ("radar", "map"):
-            self.view_mode = "radar"
+        # Always start at the chooser; selected modes are session-only.
+        self.view_mode = "menu"
         self.mode_buttons = {}
+        self.menu_hitboxes = []
         self.view_title_var = None
         self.auto_map_bounds = None
 
@@ -154,7 +154,6 @@ class GuiRadar(TerminalRadar):
 
     def _set_view_mode(self, mode):
         self.view_mode = mode
-        self.gui_config["view_mode"] = mode
         for name, button in self.mode_buttons.items():
             active = name == mode
             button.configure(
@@ -162,10 +161,13 @@ class GuiRadar(TerminalRadar):
                 fg="#ffffff" if active else self.MUTED,
             )
         if self.view_title_var is not None:
-            self.view_title_var.set(
-                "FULL MAP  /  NORTH UP" if mode == "map"
-                else "LOCAL RADAR  /  HEADING UP"
-            )
+            titles = {
+                "menu": "SELECT A VIEW",
+                "esp": "ESP  /  CAMERA VIEW",
+                "map": "FULL MAP  /  NORTH UP",
+                "radar": "LOCAL RADAR  /  HEADING UP",
+            }
+            self.view_title_var.set(titles[mode])
 
     def _build_window(self):
         self.root = tk.Tk()
@@ -243,7 +245,12 @@ class GuiRadar(TerminalRadar):
         ).pack(side="left")
         switcher = tk.Frame(view_header, bg=self.PANEL_ALT)
         switcher.pack(side="right")
-        for mode, label in (("map", "MAP VIEW"), ("radar", "RADAR")):
+        for mode, label in (
+            ("menu", "MENU"),
+            ("esp", "ESP"),
+            ("map", "MAP"),
+            ("radar", "RADAR"),
+        ):
             button = self._button(
                 switcher,
                 label,
@@ -256,6 +263,7 @@ class GuiRadar(TerminalRadar):
             radar_panel, bg=self.PANEL, highlightthickness=0, bd=0
         )
         self.canvas.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self.canvas.bind("<Button-1>", self._on_canvas_click)
 
         # Compact mode keeps the data available for the canvas HUD without
         # spending permanent window space on a separate sidebar.
@@ -267,6 +275,14 @@ class GuiRadar(TerminalRadar):
 
     def _sync_display_options(self):
         """Retained for settings compatibility; compact mode has no sidebar."""
+
+    def _on_canvas_click(self, event):
+        if self.view_mode != "menu":
+            return
+        for left, top, right, bottom, mode in self.menu_hitboxes:
+            if left <= event.x <= right and top <= event.y <= bottom:
+                self._set_view_mode(mode)
+                return
 
     def _open_settings(self):
         """Open a compact modal settings panel and persist accepted changes."""
@@ -670,6 +686,191 @@ class GuiRadar(TerminalRadar):
             local=True, yaw=angles[0] if angles else 0.0
         )
 
+    def _draw_mode_menu(self):
+        """Draw the first-open selector for the three visual modes."""
+        self.canvas.delete("all")
+        width = max(1, self.canvas.winfo_width())
+        height = max(1, self.canvas.winfo_height())
+        self.menu_hitboxes = []
+        self.canvas.create_text(
+            width / 2,
+            48,
+            text="CHOOSE YOUR VIEW",
+            fill=self.TEXT,
+            font=("Segoe UI Semibold", 18),
+        )
+        self.canvas.create_text(
+            width / 2,
+            76,
+            text="Switch modes at any time from the top bar",
+            fill=self.MUTED,
+            font=("Segoe UI", 9),
+        )
+        options = (
+            ("esp", "ESP", "Camera projection with player boxes", self.YELLOW),
+            ("map", "MAP VIEW", "All players on a north-up overview", self.BLUE),
+            ("radar", "RADAR", "Compact player-centered heading view", self.GREEN),
+        )
+        card_width = min(430, width - 44)
+        card_height = min(105, max(76, (height - 150) / 3 - 12))
+        left = (width - card_width) / 2
+        top = 108
+        for mode, title, subtitle, color in options:
+            bottom = top + card_height
+            self.canvas.create_rectangle(
+                left,
+                top,
+                left + card_width,
+                bottom,
+                fill=self.PANEL_ALT,
+                outline=self.BORDER,
+                width=2,
+            )
+            self.canvas.create_rectangle(
+                left,
+                top,
+                left + 5,
+                bottom,
+                fill=color,
+                outline="",
+            )
+            self.canvas.create_text(
+                left + 24,
+                top + card_height / 2 - 11,
+                anchor="w",
+                text=title,
+                fill=self.TEXT,
+                font=("Segoe UI Semibold", 13),
+            )
+            self.canvas.create_text(
+                left + 24,
+                top + card_height / 2 + 13,
+                anchor="w",
+                text=subtitle,
+                fill=self.MUTED,
+                font=("Segoe UI", 9),
+            )
+            self.canvas.create_text(
+                left + card_width - 24,
+                top + card_height / 2,
+                anchor="e",
+                text="OPEN  >",
+                fill=color,
+                font=("Consolas", 9, "bold"),
+            )
+            self.menu_hitboxes.append(
+                (left, top, left + card_width, bottom, mode)
+            )
+            top = bottom + 12
+
+    @staticmethod
+    def _world_to_screen(position, matrix, width, height):
+        """Project a world point with CS2's row-major 4x4 view matrix."""
+        x, y, z = position
+        clip_x = x * matrix[0] + y * matrix[1] + z * matrix[2] + matrix[3]
+        clip_y = x * matrix[4] + y * matrix[5] + z * matrix[6] + matrix[7]
+        clip_w = x * matrix[12] + y * matrix[13] + z * matrix[14] + matrix[15]
+        if clip_w <= 0.01:
+            return None
+        return (
+            width * 0.5 * (1.0 + clip_x / clip_w),
+            height * 0.5 * (1.0 - clip_y / clip_w),
+        )
+
+    @staticmethod
+    def _demo_world_to_screen(position, local, angles, width, height):
+        """Perspective fallback used only by demo mode."""
+        dx = position[0] - local["position"][0]
+        dy = position[1] - local["position"][1]
+        dz = position[2] - (local["position"][2] + 64.0)
+        yaw = math.radians(angles[0])
+        forward = dx * math.cos(yaw) + dy * math.sin(yaw)
+        right = dx * math.sin(yaw) - dy * math.cos(yaw)
+        if forward <= 5:
+            return None
+        focal = width * 0.72
+        return (
+            width / 2 + right / forward * focal,
+            height / 2 - dz / forward * focal,
+        )
+
+    def _draw_esp(self, players, local, angles, matrix=None):
+        """Draw read-only player boxes projected into the camera view."""
+        self.canvas.delete("all")
+        width = max(1, self.canvas.winfo_width())
+        height = max(1, self.canvas.winfo_height())
+        self.canvas.create_rectangle(
+            0, 0, width, height, fill="#080d16", outline=""
+        )
+        self.canvas.create_text(
+            16,
+            14,
+            anchor="nw",
+            text="ESP  /  READ-ONLY CAMERA PROJECTION",
+            fill=self.MUTED,
+            font=("Consolas", 8, "bold"),
+        )
+        cx, cy = width / 2, height / 2
+        self.canvas.create_line(cx - 7, cy, cx + 7, cy, fill=self.MUTED)
+        self.canvas.create_line(cx, cy - 7, cx, cy + 7, fill=self.MUTED)
+
+        use_matrix = matrix and len(matrix) == 16 and any(matrix)
+
+        def project(position):
+            if use_matrix:
+                return self._world_to_screen(position, matrix, width, height)
+            return self._demo_world_to_screen(
+                position, local, angles, width, height
+            )
+
+        for player in sorted(
+            players, key=lambda item: item["distance"], reverse=True
+        ):
+            feet = project(player["position"])
+            head_position = (
+                player["position"][0],
+                player["position"][1],
+                player["position"][2] + 72.0,
+            )
+            head = project(head_position)
+            if not feet or not head:
+                continue
+            box_height = abs(feet[1] - head[1])
+            if box_height < 4:
+                continue
+            box_width = box_height * 0.46
+            center_x = (feet[0] + head[0]) / 2
+            top = min(feet[1], head[1])
+            bottom = max(feet[1], head[1])
+            left, right = center_x - box_width / 2, center_x + box_width / 2
+            if right < 0 or left > width or bottom < 0 or top > height:
+                continue
+            color = self.RED if player["is_enemy"] else self.BLUE
+            label = "ENEMY" if player["is_enemy"] else "ALLY"
+            self.canvas.create_rectangle(
+                left, top, right, bottom, outline=color, width=2
+            )
+            self.canvas.create_text(
+                left,
+                top - 7,
+                anchor="sw",
+                text=f"{label}  {player['distance']:.0f}u",
+                fill=color,
+                font=("Consolas", 8, "bold"),
+            )
+            if self.display.get("show_health_bars", True):
+                self.canvas.create_rectangle(
+                    left - 7, top, left - 3, bottom,
+                    fill=self.BORDER, outline=""
+                )
+                health_top = bottom - box_height * player["health"] / 100
+                self.canvas.create_rectangle(
+                    left - 7, health_top, left - 3, bottom,
+                    fill=self.GREEN if player["health"] > 50 else self.YELLOW
+                    if player["health"] > 25 else self.RED,
+                    outline="",
+                )
+
     def _draw_contacts(self, players):
         if self.contact_canvas is None:
             return
@@ -751,7 +952,7 @@ class GuiRadar(TerminalRadar):
             )
             self.canvas.tag_lower(background, text_id)
 
-    def _show_snapshot(self, local, angles, players, status):
+    def _show_snapshot(self, local, angles, players, status, matrix=None):
         enemies = [player for player in players if player["is_enemy"]]
         allies = [player for player in players if not player["is_enemy"]]
         closest = (
@@ -765,7 +966,12 @@ class GuiRadar(TerminalRadar):
         )
         yaw = angles[0]
         self.heading_var.set(f"{self._direction(yaw)}  /  {yaw:.1f} deg")
-        if self.view_mode == "map":
+        if self.view_mode == "menu":
+            self._draw_mode_menu()
+            return
+        if self.view_mode == "esp":
+            self._draw_esp(players, local, angles, matrix)
+        elif self.view_mode == "map":
             self._draw_map(players, local, angles)
         else:
             self._draw_radar(players, local, angles)
@@ -796,8 +1002,12 @@ class GuiRadar(TerminalRadar):
                 else:
                     angles = self.get_view_angles()
                     players = self.get_players(local)
+                    matrix = (
+                        self.get_view_matrix()
+                        if self.view_mode == "esp" else None
+                    )
                     self._show_snapshot(
-                        local, angles, players, "LIVE  /  CONNECTED"
+                        local, angles, players, "LIVE  /  CONNECTED", matrix
                     )
         except Exception as error:
             label = "DEMO ERROR" if self.demo else "READ ERROR"

@@ -25,6 +25,7 @@ def extract(offsets_json, client_dll_json):
         "dwEntityList": client["dwEntityList"],
         "dwLocalPlayerController": client["dwLocalPlayerController"],
         "dwViewAngles": client["dwViewAngles"],
+        "dwViewMatrix": client["dwViewMatrix"],
         "m_hPlayerPawn": classes["CCSPlayerController"]["fields"]["m_hPlayerPawn"],
         "m_iHealth": classes["C_BaseEntity"]["fields"]["m_iHealth"],
         "m_iTeamNum": classes["C_BaseEntity"]["fields"]["m_iTeamNum"],
@@ -41,7 +42,7 @@ def update_offsets(offsets_url=OFFSETS_URL, client_dll_url=CLIENT_DLL_URL,
         offsets = extract(offsets_json, client_dll_json)
 
         payload = {
-            "_comment": "Offline fallback offsets for cs2_radar.py (flat schema, hex strings).",
+            "_comment": "Offline fallback offsets for main.py (flat schema, hex strings).",
             "_source": "https://github.com/a2x/cs2-dumper",
         }
         payload.update({key: hex(value) for key, value in offsets.items()})

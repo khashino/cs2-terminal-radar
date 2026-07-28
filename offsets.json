@@ -4,6 +4,7 @@
   "dwEntityList": "0x254fe70",
   "dwLocalPlayerController": "0x237fb70",
   "dwViewAngles": "0x23bae18",
+  "dwViewMatrix": "0x23aa340",
   "m_hPlayerPawn": "0x914",
   "m_iHealth": "0x34c",
   "m_iTeamNum": "0x3e7",

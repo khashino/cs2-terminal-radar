@@ -33,6 +33,7 @@ REQUIRED_OFFSETS = (
     "dwEntityList",
     "dwLocalPlayerController",
     "dwViewAngles",
+    "dwViewMatrix",
     "m_hPlayerPawn",
     "m_iHealth",
     "m_iTeamNum",
@@ -45,6 +46,7 @@ FALLBACK_OFFSETS = {
     "dwEntityList": 0x254FE70,
     "dwLocalPlayerController": 0x237FB70,
     "dwViewAngles": 0x23BAE18,
+    "dwViewMatrix": 0x23AA340,
     "m_hPlayerPawn": 0x914,
     "m_iHealth": 0x34C,
     "m_iTeamNum": 0x3E7,
@@ -52,7 +54,7 @@ FALLBACK_OFFSETS = {
 }
 
 DEFAULT_CONFIG = {
-    "mode": "terminal",
+    "mode": "gui",
     "radar": {
         "map_size": 40,
         "update_interval": 0.2,
@@ -64,7 +66,7 @@ DEFAULT_CONFIG = {
         "window_height": 680,
         "always_on_top": False,
         "opacity": 0.97,
-        "view_mode": "radar",
+        "view_mode": "menu",
         "map_bounds": None,
     },
     "display": {
@@ -172,6 +174,7 @@ class OffsetManager:
             "dwEntityList": client["dwEntityList"],
             "dwLocalPlayerController": client["dwLocalPlayerController"],
             "dwViewAngles": client["dwViewAngles"],
+            "dwViewMatrix": client["dwViewMatrix"],
             "m_hPlayerPawn": classes["CCSPlayerController"]["fields"]["m_hPlayerPawn"],
             "m_iHealth": classes["C_BaseEntity"]["fields"]["m_iHealth"],
             "m_iTeamNum": classes["C_BaseEntity"]["fields"]["m_iTeamNum"],
@@ -227,6 +230,7 @@ class TerminalRadar:
         self.dwEntityList = offsets["dwEntityList"]
         self.dwLocalPlayerController = offsets["dwLocalPlayerController"]
         self.dwViewAngles = offsets["dwViewAngles"]
+        self.dwViewMatrix = offsets["dwViewMatrix"]
         self.m_hPlayerPawn = offsets["m_hPlayerPawn"]
         self.m_iHealth = offsets["m_iHealth"]
         self.m_iTeamNum = offsets["m_iTeamNum"]
@@ -370,6 +374,11 @@ class TerminalRadar:
         pitch = self.read_float(angles_addr)
         yaw = self.read_float(angles_addr + 4)
         return (yaw, pitch)
+
+    def get_view_matrix(self):
+        """Read the 4x4 camera matrix used for world-to-screen projection."""
+        address = self.client_base + self.dwViewMatrix
+        return tuple(self.read_float(address + index * 4) for index in range(16))
 
     def resolve_pawn_handle(self, pawn_handle):
         """Resolve a pawn handle to a pawn address via the entity list."""
@@ -644,7 +653,7 @@ def main():
     selected_mode = (
         "gui" if args.gui or args.demo else
         "terminal" if args.terminal else
-        str(config.get("mode", "terminal")).lower()
+        str(config.get("mode", "gui")).lower()
     )
     if selected_mode == "gui":
         from gui_radar import GuiRadar

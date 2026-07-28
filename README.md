@@ -15,6 +15,8 @@ in a VAC ban. Only run it against your own client launched with `-insecure`.
 
 - Real-time top-down radar in the terminal
 - Optional desktop GUI with switchable full-map and local-radar views
+- Read-only ESP camera view with player boxes, distance, and health
+- Startup selector for ESP, Map View, or Radar
 - In-app settings for range, refresh speed, opacity, always-on-top, and contact display
 - Direction indicator (N/E/S/W)
 - Distance to players and closest-enemy readout
@@ -27,7 +29,7 @@ in a VAC ban. Only run it against your own client launched with `-insecure`.
 
 ```
 cs2-terminal-radar/
-├── cs2_radar.py       # Main app
+├── main.py            # Universal launcher
 ├── gui_radar.py       # Optional Tkinter desktop interface
 ├── config.json        # Settings (loaded on startup; defaults used if missing)
 ├── offsets.json       # Offline fallback offsets (auto-refreshed when online)
@@ -46,7 +48,7 @@ cd cs2-terminal-radar
 pip install -r requirements.txt   # pymem, psutil, requests
 
 # Launch CS2 with:  -insecure -novid -nojoy
-python cs2_radar.py
+python main.py
 ```
 
 Press `Ctrl+C` to exit.
@@ -54,20 +56,21 @@ Press `Ctrl+C` to exit.
 To open the desktop interface:
 
 ```bash
-python cs2_radar.py --gui
+python main.py --gui
 ```
 
 To preview the complete animated interface with randomized data, without
 starting CS2 or running as Administrator:
 
 ```bash
-python cs2_radar.py --demo
+python main.py --demo
 ```
 
 Demo mode does not connect to a process or download offsets.
 
-Set `"mode": "gui"` in `config.json` to make the GUI the default. You can
-always pass `--terminal` to switch back to the original terminal view.
+The GUI is the default when running `python main.py`. Use the startup menu to
+choose ESP, Map View, or Radar. You can pass `--terminal` to use the original
+terminal view.
 
 ## ⚙️ Configuration
 
@@ -75,7 +78,7 @@ Edit `config.json` (all keys are optional — missing keys fall back to defaults
 
 ```jsonc
 {
-  "mode": "terminal",        // "terminal" or "gui"
+  "mode": "gui",             // "gui" or "terminal"
   "radar": {
     "map_size": 40,          // Grid size (cells)
     "update_interval": 0.2,  // Seconds between refreshes
@@ -87,7 +90,7 @@ Edit `config.json` (all keys are optional — missing keys fall back to defaults
     "window_height": 680,
     "always_on_top": false,
     "opacity": 0.97,
-    "view_mode": "radar",   // "radar" (heading-up) or "map" (north-up)
+    "view_mode": "menu",    // Opens the ESP / Map / Radar selector
     "map_bounds": null      // Optional [min_x, min_y, max_x, max_y]
   },
   "display": {
@@ -117,7 +120,7 @@ python update_offsets.py
 ```
 
 If the download fails, the radar uses the cached `offsets.json`, and if that is
-missing too, a set of hardcoded fallback offsets baked into `cs2_radar.py`.
+missing too, a set of hardcoded fallback offsets baked into `main.py`.
 
 ## License
 

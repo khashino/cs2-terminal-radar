@@ -1,5 +1,5 @@
 {
-  "mode": "terminal",
+  "mode": "gui",
   "radar": {
     "map_size": 40,
     "update_interval": 0.2,
@@ -11,7 +11,7 @@
     "window_height": 680,
     "always_on_top": true,
     "opacity": 0.67,
-    "view_mode": "radar",
+    "view_mode": "menu",
     "map_bounds": null
   },
   "display": {
