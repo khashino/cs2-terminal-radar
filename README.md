@@ -9,11 +9,9 @@
 
 ## Demo
 
-<video src="./DEMO/Video.mp4" controls width="100%">
-  Your browser does not support embedded video.
-</video>
+[![CS2 Radar software demo](./DEMO/Video.gif)](./DEMO/Video.mp4)
 
-[Watch or download the full software demo](./DEMO/Video.mp4)
+[Watch or download the full-quality MP4 demo](./DEMO/Video.mp4)
 
 ## Disclaimer
 
@@ -143,6 +141,7 @@ Settings are stored in `config.json`:
 ```text
 cs2-terminal-radar/
 ├── DEMO/
+│   ├── Video.gif
 │   └── Video.mp4
 ├── main.py
 ├── gui_radar.py
