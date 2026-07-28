@@ -26,9 +26,13 @@
 
 ## Preview
 
-[![Animated preview of CS2 Radar](./DEMO/Video.gif)](./DEMO/Video.mp4)
+<img
+  src="./DEMO/Video.gif"
+  alt="Animated preview of CS2 Radar"
+  width="100%"
+>
 
-Click the preview to open the full-quality MP4 demonstration.
+[Watch the full-quality MP4 demonstration](./DEMO/Video.mp4)
 
 ## What it provides
 
