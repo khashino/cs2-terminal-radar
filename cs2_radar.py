@@ -363,22 +363,30 @@ class TerminalRadar:
 
     def get_view_angles(self):
         angles_addr = self.client_base + self.dwViewAngles
-        yaw = self.read_float(angles_addr)
-        pitch = self.read_float(angles_addr + 4)
+        # Source 2 stores QAngle as pitch (vertical), yaw (horizontal), roll.
+        # Radar rotation must use yaw, so read it from the second float.
+        pitch = self.read_float(angles_addr)
+        yaw = self.read_float(angles_addr + 4)
         return (yaw, pitch)
 
     def resolve_pawn_handle(self, pawn_handle):
         """Resolve a pawn handle to a pawn address via the entity list."""
-        entity_list = self.client_base + self.dwEntityList
-        pawn_entry = self.read_longlong(
-            entity_list
-            + 0x10
-            + 8 * ((pawn_handle & 0x7FFF) >> 9)
-            + 0x70 * (pawn_handle & 0x1FF)
-        )
-        if not pawn_entry:
+        entity_list = self.read_longlong(self.client_base + self.dwEntityList)
+        if not entity_list:
             return None
-        pawn = self.read_longlong(pawn_entry + 0x78 * (pawn_handle & 0x1FF))
+
+        # The entity list is split into chunks. First select the chunk using
+        # the high bits of the handle, then select the entity within that
+        # chunk using the low bits.
+        list_entry = self.read_longlong(
+            entity_list + 0x10 + 8 * ((pawn_handle & 0x7FFF) >> 9)
+        )
+        if not list_entry:
+            return None
+
+        pawn = self.read_longlong(
+            list_entry + 0x70 * (pawn_handle & 0x1FF)
+        )
         return pawn or None
 
     def _read_player(self, controller):
@@ -417,10 +425,20 @@ class TerminalRadar:
     def get_players(self, local):
         """Enumerate other players relative to the given local player."""
         players = []
-        entity_list = self.client_base + self.dwEntityList
+        entity_list = self.read_longlong(self.client_base + self.dwEntityList)
+        if not entity_list:
+            return players
 
         for i in range(1, 65):
-            controller = self.read_longlong(entity_list + i * 0x10)
+            list_entry = self.read_longlong(
+                entity_list + 0x10 + 8 * ((i & 0x7FFF) >> 9)
+            )
+            if not list_entry:
+                continue
+
+            controller = self.read_longlong(
+                list_entry + 0x70 * (i & 0x1FF)
+            )
             if not controller or controller == local["controller"]:
                 continue
 
@@ -446,10 +464,17 @@ class TerminalRadar:
             yaw_rad = math.radians(local_angles[0])
             cos_yaw = math.cos(yaw_rad)
             sin_yaw = math.sin(yaw_rad)
-            dx, dy = dx * cos_yaw - dy * sin_yaw, dx * sin_yaw + dy * cos_yaw
+            # Project the world-space difference onto the player's forward
+            # and right axes. Screen rows increase downward, so forward must
+            # be subtracted to place targets in front at the top of the radar.
+            forward = dx * cos_yaw + dy * sin_yaw
+            right = dx * sin_yaw - dy * cos_yaw
+        else:
+            forward = dx
+            right = -dy
 
-        grid_x = int(dx / self.scale) + self.radius
-        grid_y = int(dy / self.scale) + self.radius
+        grid_x = int(right / self.scale) + self.radius
+        grid_y = self.radius - int(forward / self.scale)
 
         grid_x = max(0, min(self.map_size - 1, grid_x))
         grid_y = max(0, min(self.map_size - 1, grid_y))
