@@ -14,7 +14,8 @@ in a VAC ban. Only run it against your own client launched with `-insecure`.
 ## ✨ Features
 
 - Real-time top-down radar in the terminal
-- Optional desktop GUI with a circular radar and live contact panel
+- Optional desktop GUI with switchable full-map and local-radar views
+- In-app settings for range, refresh speed, opacity, always-on-top, and contact display
 - Direction indicator (N/E/S/W)
 - Distance to players and closest-enemy readout
 - Health bars (green/yellow/red)
@@ -82,10 +83,12 @@ Edit `config.json` (all keys are optional — missing keys fall back to defaults
     "colors_enabled": true
   },
   "gui": {
-    "window_width": 1040,
-    "window_height": 720,
+    "window_width": 620,
+    "window_height": 680,
     "always_on_top": false,
-    "opacity": 0.97
+    "opacity": 0.97,
+    "view_mode": "radar",   // "radar" (heading-up) or "map" (north-up)
+    "map_bounds": null      // Optional [min_x, min_y, max_x, max_y]
   },
   "display": {
     "show_health_bars": true,

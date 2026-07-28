@@ -60,10 +60,12 @@ DEFAULT_CONFIG = {
         "colors_enabled": True,
     },
     "gui": {
-        "window_width": 1040,
-        "window_height": 720,
+        "window_width": 620,
+        "window_height": 680,
         "always_on_top": False,
         "opacity": 0.97,
+        "view_mode": "radar",
+        "map_bounds": None,
     },
     "display": {
         "show_health_bars": True,

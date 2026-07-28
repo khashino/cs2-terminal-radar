@@ -3,14 +3,16 @@
   "radar": {
     "map_size": 40,
     "update_interval": 0.2,
-    "scale": 20,
+    "scale": 20.0,
     "colors_enabled": true
   },
   "gui": {
-    "window_width": 1040,
-    "window_height": 720,
-    "always_on_top": false,
-    "opacity": 0.97
+    "window_width": 620,
+    "window_height": 680,
+    "always_on_top": true,
+    "opacity": 0.67,
+    "view_mode": "radar",
+    "map_bounds": null
   },
   "display": {
     "show_health_bars": true,
