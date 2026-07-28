@@ -16,6 +16,7 @@ in a VAC ban. Only run it against your own client launched with `-insecure`.
 - Real-time top-down radar in the terminal
 - Optional desktop GUI with switchable full-map and local-radar views
 - Read-only ESP camera view with player boxes, distance, and health
+- Click-through ESP overlay aligned to the CS2 client (`F8` or `Insert` returns to the menu)
 - Startup selector for ESP, Map View, or Radar
 - In-app settings for range, refresh speed, opacity, always-on-top, and contact display
 - Direction indicator (N/E/S/W)
@@ -81,7 +82,7 @@ Edit `config.json` (all keys are optional — missing keys fall back to defaults
   "mode": "gui",             // "gui" or "terminal"
   "radar": {
     "map_size": 40,          // Grid size (cells)
-    "update_interval": 0.2,  // Seconds between refreshes
+    "update_interval": 0.02, // Seconds between refreshes (50 FPS target)
     "scale": 20,             // World units per grid cell (zoom)
     "colors_enabled": true
   },

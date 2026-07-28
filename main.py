@@ -57,7 +57,7 @@ DEFAULT_CONFIG = {
     "mode": "gui",
     "radar": {
         "map_size": 40,
-        "update_interval": 0.2,
+        "update_interval": 0.02,
         "scale": 20,
         "colors_enabled": True,
     },

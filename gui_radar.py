@@ -4,9 +4,11 @@ import math
 import random
 import time
 import json
+import ctypes
 import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
+from ctypes import wintypes
 
 from main import TerminalRadar
 
@@ -38,6 +40,10 @@ class GuiRadar(TerminalRadar):
         self.root = None
         self.canvas = None
         self.contact_canvas = None
+        self.esp_window = None
+        self.esp_canvas = None
+        self.cs2_window = None
+        self.hotkey_state = {0x77: False, 0x2D: False}
         self.running = False
         # Always start at the chooser; selected modes are session-only.
         self.view_mode = "menu"
@@ -153,6 +159,10 @@ class GuiRadar(TerminalRadar):
         )
 
     def _set_view_mode(self, mode):
+        if mode == "esp" and not self.demo:
+            self._enter_esp_overlay()
+        elif self.esp_window is not None:
+            self._exit_esp_overlay()
         self.view_mode = mode
         for name, button in self.mode_buttons.items():
             active = name == mode
@@ -168,6 +178,136 @@ class GuiRadar(TerminalRadar):
                 "radar": "LOCAL RADAR  /  HEADING UP",
             }
             self.view_title_var.set(titles[mode])
+
+    def _find_cs2_window(self):
+        """Find the visible top-level window owned by the connected CS2 process."""
+        if not self.pm or not getattr(self.pm, "process_id", None):
+            return None
+        user32 = ctypes.windll.user32
+        target_pid = int(self.pm.process_id)
+        matches = []
+        callback_type = ctypes.WINFUNCTYPE(
+            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+        )
+
+        def visit(hwnd, _):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value == target_pid and user32.IsWindowVisible(hwnd):
+                rect = wintypes.RECT()
+                if user32.GetClientRect(hwnd, ctypes.byref(rect)):
+                    area = max(0, rect.right - rect.left) * max(
+                        0, rect.bottom - rect.top
+                    )
+                    if area:
+                        matches.append((area, hwnd))
+            return True
+
+        user32.EnumWindows(callback_type(visit), 0)
+        return max(matches, default=(0, None))[1]
+
+    @staticmethod
+    def _client_rect_on_screen(hwnd):
+        if not hwnd:
+            return None
+        user32 = ctypes.windll.user32
+        rect = wintypes.RECT()
+        origin = wintypes.POINT(0, 0)
+        if not user32.GetClientRect(hwnd, ctypes.byref(rect)):
+            return None
+        if not user32.ClientToScreen(hwnd, ctypes.byref(origin)):
+            return None
+        width = rect.right - rect.left
+        height = rect.bottom - rect.top
+        if width <= 1 or height <= 1:
+            return None
+        return origin.x, origin.y, width, height
+
+    def _position_esp_overlay(self):
+        bounds = self._client_rect_on_screen(self.cs2_window)
+        if not bounds or self.esp_window is None:
+            return
+        x, y, width, height = bounds
+        self.esp_window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _enter_esp_overlay(self):
+        """Create a transparent, click-through overlay over the CS2 client."""
+        if self.root is None or self.esp_window is not None:
+            return
+        self.cs2_window = self._find_cs2_window()
+        if self.cs2_window is None:
+            messagebox.showerror(
+                "CS2 window not found",
+                "The CS2 game window could not be found.",
+                parent=self.root,
+            )
+            return
+
+        transparent = "#010203"
+        overlay = tk.Toplevel(self.root)
+        overlay.title("CS2 ESP Overlay")
+        overlay.overrideredirect(True)
+        overlay.configure(bg=transparent)
+        overlay.attributes("-topmost", True)
+        try:
+            overlay.attributes("-transparentcolor", transparent)
+        except tk.TclError:
+            pass
+        self.esp_canvas = tk.Canvas(
+            overlay, bg=transparent, highlightthickness=0, bd=0
+        )
+        self.esp_canvas.pack(fill="both", expand=True)
+        self.esp_window = overlay
+        self._position_esp_overlay()
+        overlay.update_idletasks()
+
+        user32 = ctypes.windll.user32
+        hwnd = overlay.winfo_id()
+        wrapper = user32.GetParent(hwnd)
+        if wrapper:
+            hwnd = wrapper
+        gwl_exstyle = -20
+        ws_ex_layered = 0x00080000
+        ws_ex_transparent = 0x00000020
+        ws_ex_toolwindow = 0x00000080
+        ws_ex_noactivate = 0x08000000
+        style = user32.GetWindowLongW(hwnd, gwl_exstyle)
+        user32.SetWindowLongW(
+            hwnd,
+            gwl_exstyle,
+            style
+            | ws_ex_layered
+            | ws_ex_transparent
+            | ws_ex_toolwindow
+            | ws_ex_noactivate,
+        )
+        # Apply the extended style without moving or activating the overlay.
+        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x37)
+        self.root.withdraw()
+
+    def _exit_esp_overlay(self):
+        if self.esp_window is not None:
+            self.esp_window.destroy()
+        self.esp_window = None
+        self.esp_canvas = None
+        self.cs2_window = None
+        if self.root is not None:
+            self.root.deiconify()
+            self.root.lift()
+
+    def _check_esp_hotkey(self):
+        """F8 or Insert returns from the overlay to the mode menu."""
+        if self.esp_window is None:
+            self.hotkey_state = {key: False for key in self.hotkey_state}
+            return
+        user32 = ctypes.windll.user32
+        for virtual_key in self.hotkey_state:
+            is_down = bool(user32.GetAsyncKeyState(virtual_key) & 0x8000)
+            was_down = self.hotkey_state[virtual_key]
+            self.hotkey_state[virtual_key] = is_down
+            if is_down and not was_down:
+                self._set_view_mode("menu")
+                return
 
     def _build_window(self):
         self.root = tk.Tk()
@@ -391,7 +531,7 @@ class GuiRadar(TerminalRadar):
         checkbox("Show health bars", show_health)
         slider("Window opacity", opacity, 0.55, 1.0, 0.01, "")
         slider("Radar range", scale, 5, 80, 1, " u")
-        slider("Refresh interval", refresh, 0.05, 1.0, 0.05, " s")
+        slider("Refresh interval", refresh, 0.01, 0.25, 0.01, " s")
 
         actions = tk.Frame(window, bg=self.BG)
         actions.pack(fill="x", padx=24, pady=18)
@@ -796,23 +936,30 @@ class GuiRadar(TerminalRadar):
 
     def _draw_esp(self, players, local, angles, matrix=None):
         """Draw read-only player boxes projected into the camera view."""
-        self.canvas.delete("all")
-        width = max(1, self.canvas.winfo_width())
-        height = max(1, self.canvas.winfo_height())
-        self.canvas.create_rectangle(
-            0, 0, width, height, fill="#080d16", outline=""
-        )
-        self.canvas.create_text(
+        canvas = self.esp_canvas if self.esp_canvas is not None else self.canvas
+        canvas.delete("all")
+        width = max(1, canvas.winfo_width())
+        height = max(1, canvas.winfo_height())
+        if canvas is self.canvas:
+            canvas.create_rectangle(
+                0, 0, width, height, fill="#080d16", outline=""
+            )
+        canvas.create_text(
             16,
             14,
             anchor="nw",
-            text="ESP  /  READ-ONLY CAMERA PROJECTION",
+            text=(
+                "ESP ACTIVE  /  F8 OR INSERT: RETURN TO MENU"
+                if canvas is self.esp_canvas
+                else "ESP  /  READ-ONLY CAMERA PROJECTION"
+            ),
             fill=self.MUTED,
             font=("Consolas", 8, "bold"),
         )
-        cx, cy = width / 2, height / 2
-        self.canvas.create_line(cx - 7, cy, cx + 7, cy, fill=self.MUTED)
-        self.canvas.create_line(cx, cy - 7, cx, cy + 7, fill=self.MUTED)
+        if canvas is self.canvas:
+            cx, cy = width / 2, height / 2
+            canvas.create_line(cx - 7, cy, cx + 7, cy, fill=self.MUTED)
+            canvas.create_line(cx, cy - 7, cx, cy + 7, fill=self.MUTED)
 
         use_matrix = matrix and len(matrix) == 16 and any(matrix)
 
@@ -847,10 +994,10 @@ class GuiRadar(TerminalRadar):
                 continue
             color = self.RED if player["is_enemy"] else self.BLUE
             label = "ENEMY" if player["is_enemy"] else "ALLY"
-            self.canvas.create_rectangle(
+            canvas.create_rectangle(
                 left, top, right, bottom, outline=color, width=2
             )
-            self.canvas.create_text(
+            canvas.create_text(
                 left,
                 top - 7,
                 anchor="sw",
@@ -859,12 +1006,12 @@ class GuiRadar(TerminalRadar):
                 font=("Consolas", 8, "bold"),
             )
             if self.display.get("show_health_bars", True):
-                self.canvas.create_rectangle(
+                canvas.create_rectangle(
                     left - 7, top, left - 3, bottom,
                     fill=self.BORDER, outline=""
                 )
                 health_top = bottom - box_height * player["health"] / 100
-                self.canvas.create_rectangle(
+                canvas.create_rectangle(
                     left - 7, health_top, left - 3, bottom,
                     fill=self.GREEN if player["health"] > 50 else self.YELLOW
                     if player["health"] > 25 else self.RED,
@@ -975,12 +1122,16 @@ class GuiRadar(TerminalRadar):
             self._draw_map(players, local, angles)
         else:
             self._draw_radar(players, local, angles)
-        self._draw_compact_hud()
+        if self.esp_window is None:
+            self._draw_compact_hud()
 
     def _update_frame(self):
         if not self.running:
             return
         try:
+            self._check_esp_hotkey()
+            if self.esp_window is not None:
+                self._position_esp_overlay()
             self.clock_var.set(time.strftime("%H:%M:%S"))
             if self.demo:
                 local, angles, players = self._demo_snapshot()
@@ -1013,11 +1164,15 @@ class GuiRadar(TerminalRadar):
             label = "DEMO ERROR" if self.demo else "READ ERROR"
             self.status_var.set(f"{label}  /  {error}")
 
-        delay = max(25, int(self.update_interval * 1000))
+        delay = max(8, int(self.update_interval * 1000))
         self.root.after(delay, self._update_frame)
 
     def _on_close(self):
         self.running = False
+        if self.esp_window is not None:
+            self.esp_window.destroy()
+            self.esp_window = None
+            self.esp_canvas = None
         self.close()
         if self.root is not None:
             self.root.destroy()

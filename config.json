@@ -2,7 +2,7 @@
   "mode": "gui",
   "radar": {
     "map_size": 40,
-    "update_interval": 0.2,
+    "update_interval": 0.02,
     "scale": 20.0,
     "colors_enabled": true
   },
