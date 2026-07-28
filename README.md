@@ -1,98 +1,126 @@
-# CS2 Terminal Radar 🎯
+# CS2 Radar
 
-> Terminal-based, read-only radar for Counter-Strike 2 - **Educational purposes only**
+> A read-only terminal and desktop visualization for Counter-Strike 2.
+> Educational use only.
 
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-3776AB.svg)](https://www.python.org/downloads/)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg)](https://www.microsoft.com/windows)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-## ⚠️ Disclaimer
+## Demo
 
-**EDUCATIONAL USE ONLY.** This tool only *reads* game memory; it never writes to
-the game. Never use it in official or VAC-secured matches — doing so will result
-in a VAC ban. Only run it against your own client launched with `-insecure`.
+<video src="./DEMO/Video.mp4" controls width="100%">
+  Your browser does not support embedded video.
+</video>
 
-## ✨ Features
+[Watch or download the full software demo](./DEMO/Video.mp4)
 
-- Real-time top-down radar in the terminal
-- Optional desktop GUI with switchable full-map and local-radar views
-- Read-only ESP camera view with player boxes, distance, and health
-- Click-through ESP overlay aligned to the CS2 client (`F8` or `Insert` returns to the menu)
-- Startup selector for ESP, Map View, or Radar
-- In-app settings for range, refresh speed, opacity, always-on-top, and contact display
-- Direction indicator (N/E/S/W)
-- Distance to players and closest-enemy readout
-- Health bars (green/yellow/red)
-- Offsets auto-downloaded from [a2x/cs2-dumper](https://github.com/a2x/cs2-dumper),
-  with an offline fallback
-- Configurable via `config.json`
+## Disclaimer
 
-## 📁 Structure
+**Educational use only.** This tool reads game memory but never writes to it.
+Use it only with your own client launched using `-insecure`. Never use it in
+official or VAC-secured matches.
 
+## Features
+
+- Professional desktop observation console
+- Startup selector for Camera Overlay, Tactical Map, and Local Radar
+- Real-time top-down terminal radar
+- Read-only camera projection with player boxes, distance, and health
+- Click-through overlay aligned to the CS2 window
+- Full-map and heading-up local-radar views
+- Health bars, direction, distance, and closest-enemy information
+- Settings for range, refresh rate, opacity, always-on-top, and contact display
+- Automatic offsets from [a2x/cs2-dumper](https://github.com/a2x/cs2-dumper)
+- Offline cached and built-in fallback offsets
+
+## Controls
+
+| Key | Action |
+| --- | --- |
+| `F8` | Close the camera overlay and show the main menu |
+| `Insert` | Close the camera overlay and show the main menu |
+| `Ctrl+C` | Exit terminal mode |
+
+You can also switch between Menu, ESP, Map, and Radar from the navigation bar.
+
+## Download and run the executable
+
+The packaged Windows application is generated at:
+
+```text
+dist/CS2-Radar.exe
 ```
-cs2-terminal-radar/
-├── main.py            # Universal launcher
-├── gui_radar.py       # Optional Tkinter desktop interface
-├── config.json        # Settings (loaded on startup; defaults used if missing)
-├── offsets.json       # Offline fallback offsets (auto-refreshed when online)
-├── update_offsets.py  # Manual offset updater
-└── requirements.txt   # Python dependencies
-```
 
-## 🚀 Quick Start
+1. Launch CS2 with `-insecure -novid -nojoy`.
+2. Run `CS2-Radar.exe` as Administrator.
+3. Choose a view from the main menu.
+4. While the camera overlay is active, press `F8` to show the menu again.
 
-Requires **Python 3.8+ on Windows** and a running CS2 client. Reading another
-process's memory needs elevated rights, so run your terminal **as Administrator**.
+No Python installation is required for the packaged executable.
 
-```bash
+## Run from source
+
+Requires Python 3.8 or newer on Windows:
+
+```powershell
 git clone https://github.com/khashino/cs2-terminal-radar.git
 cd cs2-terminal-radar
-pip install -r requirements.txt   # pymem, psutil, requests
-
-# Launch CS2 with:  -insecure -novid -nojoy
+python -m pip install -r requirements.txt
 python main.py
 ```
 
-Press `Ctrl+C` to exit.
+Open the GUI explicitly:
 
-To open the desktop interface:
-
-```bash
+```powershell
 python main.py --gui
 ```
 
-To preview the complete animated interface with randomized data, without
-starting CS2 or running as Administrator:
+Preview the complete interface with simulated data and without CS2:
 
-```bash
+```powershell
 python main.py --demo
 ```
 
-Demo mode does not connect to a process or download offsets.
+Use the original terminal interface:
 
-The GUI is the default when running `python main.py`. Use the startup menu to
-choose ESP, Map View, or Radar. You can pass `--terminal` to use the original
-terminal view.
+```powershell
+python main.py --terminal
+```
 
-## ⚙️ Configuration
+## Build the Windows executable
 
-Edit `config.json` (all keys are optional — missing keys fall back to defaults):
+Install PyInstaller and run the included reproducible build script:
 
-```jsonc
+```powershell
+python -m pip install pyinstaller
+python build_exe.py
+```
+
+The output will be available at `dist/CS2-Radar.exe`. Bundled defaults work on
+first launch. Saved settings and downloaded offsets are stored beside the
+executable.
+
+## Configuration
+
+Settings are stored in `config.json`:
+
+```json
 {
-  "mode": "gui",             // "gui" or "terminal"
+  "mode": "gui",
   "radar": {
-    "map_size": 40,          // Grid size (cells)
-    "update_interval": 0.02, // Seconds between refreshes (50 FPS target)
-    "scale": 20,             // World units per grid cell (zoom)
+    "map_size": 40,
+    "update_interval": 0.02,
+    "scale": 20.0,
     "colors_enabled": true
   },
   "gui": {
-    "window_width": 620,
-    "window_height": 680,
-    "always_on_top": false,
+    "window_width": 760,
+    "window_height": 720,
+    "always_on_top": true,
     "opacity": 0.97,
-    "view_mode": "menu",    // Opens the ESP / Map / Radar selector
-    "map_bounds": null      // Optional [min_x, min_y, max_x, max_y]
+    "view_mode": "menu",
+    "map_bounds": null
   },
   "display": {
     "show_health_bars": true,
@@ -102,7 +130,7 @@ Edit `config.json` (all keys are optional — missing keys fall back to defaults
     "max_players_in_list": 15
   },
   "offsets": {
-    "auto_update": true,     // Download latest offsets on startup
+    "auto_update": true,
     "local_file": "offsets.json",
     "offsets_url": "https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/offsets.json",
     "client_dll_url": "https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/client_dll.json"
@@ -110,18 +138,21 @@ Edit `config.json` (all keys are optional — missing keys fall back to defaults
 }
 ```
 
-## 🔄 Offsets
+## Project structure
 
-Offsets change with every CS2 update. With `auto_update` enabled the radar fetches
-the latest values from a2x/cs2-dumper on startup and caches them to `offsets.json`.
-To refresh manually (or when `auto_update` is off):
-
-```bash
-python update_offsets.py
+```text
+cs2-terminal-radar/
+├── DEMO/
+│   └── Video.mp4
+├── main.py
+├── gui_radar.py
+├── config.json
+├── offsets.json
+├── build_exe.py
+├── packaging/
+├── update_offsets.py
+└── requirements.txt
 ```
-
-If the download fails, the radar uses the cached `offsets.json`, and if that is
-missing too, a set of hardcoded fallback offsets baked into `main.py`.
 
 ## License
 

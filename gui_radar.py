@@ -7,27 +7,29 @@ import json
 import ctypes
 import tkinter as tk
 from tkinter import messagebox
-from pathlib import Path
 from ctypes import wintypes
 
-from main import TerminalRadar
+from main import TerminalRadar, writable_path
 
 
 class GuiRadar(TerminalRadar):
     """A polished Tkinter view backed by the existing read-only radar."""
 
-    BG = "#070b14"
-    PANEL = "#0d1422"
-    PANEL_ALT = "#111b2d"
-    BORDER = "#1d2a40"
-    TEXT = "#e7eefc"
-    MUTED = "#7f8da8"
-    GREEN = "#48e0a4"
-    RED = "#ff5c73"
-    YELLOW = "#ffc857"
-    BLUE = "#55a7ff"
-    GRID = "#20304a"
-    ACCENT = "#6c8cff"
+    BG = "#080c14"
+    PANEL = "#0e1522"
+    PANEL_ALT = "#141e2e"
+    PANEL_HOVER = "#19263a"
+    BORDER = "#243249"
+    BORDER_SOFT = "#192538"
+    TEXT = "#f2f6fc"
+    MUTED = "#8997ad"
+    GREEN = "#48d7a0"
+    RED = "#ff647c"
+    YELLOW = "#f4bd58"
+    BLUE = "#5aa7ff"
+    GRID = "#253650"
+    ACCENT = "#6d8cff"
+    ACCENT_HOVER = "#7d99ff"
     MAP_FLOOR = "#0a1320"
 
     def __init__(self, config, demo=False):
@@ -51,6 +53,7 @@ class GuiRadar(TerminalRadar):
         self.menu_hitboxes = []
         self.view_title_var = None
         self.auto_map_bounds = None
+        self.hovered_menu_mode = None
 
     def _make_demo_contacts(self):
         """Create stable random contacts that can be animated each frame."""
@@ -141,7 +144,7 @@ class GuiRadar(TerminalRadar):
         return value
 
     def _button(self, parent, text, command, width=None):
-        return tk.Button(
+        button = tk.Button(
             parent,
             text=text,
             command=command,
@@ -156,7 +159,23 @@ class GuiRadar(TerminalRadar):
             font=("Segoe UI Semibold", 9),
             padx=14,
             pady=8,
+            takefocus=True,
         )
+        button.bind(
+            "<Enter>",
+            lambda _event: button.configure(
+                bg=getattr(button, "_hover_bg", self.PANEL_HOVER)
+            ),
+        )
+        button.bind(
+            "<Leave>",
+            lambda _event: button.configure(
+                bg=getattr(button, "_normal_bg", self.PANEL_ALT)
+            ),
+        )
+        button._normal_bg = self.PANEL_ALT
+        button._hover_bg = self.PANEL_HOVER
+        return button
 
     def _set_view_mode(self, mode):
         if mode == "esp" and not self.demo:
@@ -166,8 +185,10 @@ class GuiRadar(TerminalRadar):
         self.view_mode = mode
         for name, button in self.mode_buttons.items():
             active = name == mode
+            button._normal_bg = self.ACCENT if active else self.PANEL_ALT
+            button._hover_bg = self.ACCENT_HOVER if active else self.PANEL_HOVER
             button.configure(
-                bg=self.ACCENT if active else self.PANEL_ALT,
+                bg=button._normal_bg,
                 fg="#ffffff" if active else self.MUTED,
             )
         if self.view_title_var is not None:
@@ -311,11 +332,16 @@ class GuiRadar(TerminalRadar):
 
     def _build_window(self):
         self.root = tk.Tk()
-        self.root.title("CS2 Radar")
-        width = int(self.gui_config.get("window_width", 620))
-        height = int(self.gui_config.get("window_height", 680))
-        self.root.geometry(f"{width}x{height}")
-        self.root.minsize(420, 460)
+        self.root.withdraw()
+        self.root.title("CS2 Radar — Observation Console")
+        width = int(self.gui_config.get("window_width", 760))
+        height = int(self.gui_config.get("window_height", 720))
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.minsize(560, 560)
         self.root.configure(bg=self.BG)
         self.root.attributes(
             "-topmost", bool(self.gui_config.get("always_on_top", False))
@@ -329,25 +355,49 @@ class GuiRadar(TerminalRadar):
             pass
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        header = tk.Frame(self.root, bg=self.BG, padx=10, pady=7)
+        header = tk.Frame(self.root, bg=self.BG, padx=18, pady=14)
         header.pack(fill="x")
+        brand_mark = tk.Canvas(
+            header,
+            width=34,
+            height=34,
+            bg=self.BG,
+            bd=0,
+            highlightthickness=0,
+        )
+        brand_mark.pack(side="left", padx=(0, 11))
+        brand_mark.create_oval(3, 3, 31, 31, outline=self.ACCENT, width=2)
+        brand_mark.create_oval(10, 10, 24, 24, outline=self.GRID)
+        brand_mark.create_line(17, 5, 17, 29, fill=self.GRID)
+        brand_mark.create_line(5, 17, 29, 17, fill=self.GRID)
+        brand_mark.create_oval(14, 14, 20, 20, fill=self.GREEN, outline="")
+
         title_group = tk.Frame(header, bg=self.BG)
         title_group.pack(side="left")
         tk.Label(
             title_group,
-            text="CS2  /  RADAR",
+            text="CS2 RADAR",
             bg=self.BG,
             fg=self.TEXT,
-            font=("Segoe UI Semibold", 12),
+            font=("Segoe UI Semibold", 13),
         ).pack(anchor="w")
-        self.status_var = tk.StringVar(value="CONNECTING")
+        status_row = tk.Frame(title_group, bg=self.BG)
+        status_row.pack(anchor="w", pady=(2, 0))
         tk.Label(
-            title_group,
-            textvariable=self.status_var,
+            status_row,
+            text="●",
             bg=self.BG,
             fg=self.GREEN,
-            font=("Consolas", 7, "bold"),
-        ).pack(anchor="w")
+            font=("Segoe UI", 7),
+        ).pack(side="left", padx=(0, 5))
+        self.status_var = tk.StringVar(value="CONNECTING")
+        tk.Label(
+            status_row,
+            textvariable=self.status_var,
+            bg=self.BG,
+            fg=self.MUTED,
+            font=("Segoe UI Semibold", 8),
+        ).pack(side="left")
 
         header_actions = tk.Frame(header, bg=self.BG)
         header_actions.pack(side="right")
@@ -362,9 +412,16 @@ class GuiRadar(TerminalRadar):
             fg=self.MUTED,
             font=("Consolas", 11),
         ).pack(side="right")
+        tk.Label(
+            header_actions,
+            text="LOCAL TIME",
+            bg=self.BG,
+            fg=self.MUTED,
+            font=("Segoe UI Semibold", 7),
+        ).pack(side="right", padx=(0, 8))
 
-        body = tk.Frame(self.root, bg=self.BG, padx=8)
-        body.pack(fill="both", expand=True, pady=(0, 8))
+        body = tk.Frame(self.root, bg=self.BG, padx=18)
+        body.pack(fill="both", expand=True, pady=(0, 10))
 
         radar_panel = tk.Frame(
             body,
@@ -373,7 +430,7 @@ class GuiRadar(TerminalRadar):
             highlightthickness=1,
         )
         radar_panel.pack(side="left", fill="both", expand=True)
-        view_header = tk.Frame(radar_panel, bg=self.PANEL, padx=14, pady=10)
+        view_header = tk.Frame(radar_panel, bg=self.PANEL, padx=16, pady=12)
         view_header.pack(fill="x")
         self.view_title_var = tk.StringVar()
         tk.Label(
@@ -381,7 +438,7 @@ class GuiRadar(TerminalRadar):
             textvariable=self.view_title_var,
             bg=self.PANEL,
             fg=self.MUTED,
-            font=("Segoe UI", 8, "bold"),
+            font=("Segoe UI Semibold", 8),
         ).pack(side="left")
         switcher = tk.Frame(view_header, bg=self.PANEL_ALT)
         switcher.pack(side="right")
@@ -396,7 +453,7 @@ class GuiRadar(TerminalRadar):
                 label,
                 lambda selected=mode: self._set_view_mode(selected),
             )
-            button.configure(padx=13, pady=6)
+            button.configure(padx=13, pady=6, font=("Segoe UI Semibold", 8))
             button.pack(side="left")
             self.mode_buttons[mode] = button
         self.canvas = tk.Canvas(
@@ -404,6 +461,8 @@ class GuiRadar(TerminalRadar):
         )
         self.canvas.pack(fill="both", expand=True, padx=12, pady=(0, 12))
         self.canvas.bind("<Button-1>", self._on_canvas_click)
+        self.canvas.bind("<Motion>", self._on_canvas_motion)
+        self.canvas.bind("<Leave>", self._on_canvas_leave)
 
         # Compact mode keeps the data available for the canvas HUD without
         # spending permanent window space on a separate sidebar.
@@ -412,6 +471,32 @@ class GuiRadar(TerminalRadar):
         self.closest_var = tk.StringVar(value="--")
         self.heading_var = tk.StringVar(value="--")
         self._set_view_mode(self.view_mode)
+
+        footer = tk.Frame(self.root, bg=self.BG, padx=18)
+        footer.pack(fill="x", pady=(0, 12))
+        tk.Label(
+            footer,
+            text="READ-ONLY TELEMETRY",
+            bg=self.BG,
+            fg=self.GREEN,
+            font=("Segoe UI Semibold", 8),
+        ).pack(side="left")
+        tk.Label(
+            footer,
+            text="  •  EDUCATIONAL USE  •  -INSECURE MODE ONLY",
+            bg=self.BG,
+            fg=self.MUTED,
+            font=("Segoe UI", 8),
+        ).pack(side="left")
+        tk.Label(
+            footer,
+            text="F8 / INSERT  EXIT OVERLAY",
+            bg=self.BG,
+            fg=self.MUTED,
+            font=("Consolas", 8),
+        ).pack(side="right")
+        self.root.deiconify()
+        self.root.lift()
 
     def _sync_display_options(self):
         """Retained for settings compatibility; compact mode has no sidebar."""
@@ -423,6 +508,29 @@ class GuiRadar(TerminalRadar):
             if left <= event.x <= right and top <= event.y <= bottom:
                 self._set_view_mode(mode)
                 return
+
+    def _on_canvas_motion(self, event):
+        if self.view_mode != "menu":
+            return
+        hovered = next(
+            (
+                mode
+                for left, top, right, bottom, mode in self.menu_hitboxes
+                if left <= event.x <= right and top <= event.y <= bottom
+            ),
+            None,
+        )
+        self.canvas.configure(cursor="hand2" if hovered else "")
+        if hovered != self.hovered_menu_mode:
+            self.hovered_menu_mode = hovered
+            self._draw_mode_menu()
+
+    def _on_canvas_leave(self, _event):
+        self.canvas.configure(cursor="")
+        if self.hovered_menu_mode is not None:
+            self.hovered_menu_mode = None
+            if self.view_mode == "menu":
+                self._draw_mode_menu()
 
     def _open_settings(self):
         """Open a compact modal settings panel and persist accepted changes."""
@@ -549,7 +657,7 @@ class GuiRadar(TerminalRadar):
             self.root.attributes("-alpha", opacity.get())
             self._sync_display_options()
             try:
-                Path("config.json").write_text(
+                writable_path("config.json").write_text(
                     json.dumps(self.config, indent=2) + "\n", encoding="utf-8"
                 )
             except OSError as error:
@@ -561,6 +669,8 @@ class GuiRadar(TerminalRadar):
 
         save_button = self._button(actions, "SAVE CHANGES", save)
         save_button.configure(bg=self.ACCENT)
+        save_button._normal_bg = self.ACCENT
+        save_button._hover_bg = self.ACCENT_HOVER
         save_button.pack(side="right", padx=(0, 8))
 
     def _draw_grid(self, cx, cy, radius):
@@ -834,36 +944,62 @@ class GuiRadar(TerminalRadar):
         self.menu_hitboxes = []
         self.canvas.create_text(
             width / 2,
-            48,
-            text="CHOOSE YOUR VIEW",
-            fill=self.TEXT,
-            font=("Segoe UI Semibold", 18),
+            38,
+            text="OBSERVATION CONSOLE",
+            fill=self.ACCENT,
+            font=("Segoe UI Semibold", 8),
         )
         self.canvas.create_text(
             width / 2,
-            76,
-            text="Switch modes at any time from the top bar",
+            68,
+            text="Choose a workspace",
+            fill=self.TEXT,
+            font=("Segoe UI Semibold", 20),
+        )
+        self.canvas.create_text(
+            width / 2,
+            96,
+            text="You can switch views at any time from the navigation above.",
             fill=self.MUTED,
             font=("Segoe UI", 9),
         )
         options = (
-            ("esp", "ESP", "Camera projection with player boxes", self.YELLOW),
-            ("map", "MAP VIEW", "All players on a north-up overview", self.BLUE),
-            ("radar", "RADAR", "Compact player-centered heading view", self.GREEN),
+            (
+                "esp",
+                "CAMERA OVERLAY",
+                "Live projection aligned to the game viewport",
+                self.YELLOW,
+                "01",
+            ),
+            (
+                "map",
+                "TACTICAL MAP",
+                "North-up overview with complete spatial context",
+                self.BLUE,
+                "02",
+            ),
+            (
+                "radar",
+                "LOCAL RADAR",
+                "Heading-up view centered on the local player",
+                self.GREEN,
+                "03",
+            ),
         )
-        card_width = min(430, width - 44)
-        card_height = min(105, max(76, (height - 150) / 3 - 12))
+        card_width = min(520, width - 44)
+        card_height = min(108, max(78, (height - 190) / 3 - 12))
         left = (width - card_width) / 2
-        top = 108
-        for mode, title, subtitle, color in options:
+        top = 126
+        for mode, title, subtitle, color, number in options:
             bottom = top + card_height
+            is_hovered = mode == self.hovered_menu_mode
             self.canvas.create_rectangle(
                 left,
                 top,
                 left + card_width,
                 bottom,
-                fill=self.PANEL_ALT,
-                outline=self.BORDER,
+                fill=self.PANEL_HOVER if is_hovered else self.PANEL_ALT,
+                outline=color if is_hovered else self.BORDER,
                 width=2,
             )
             self.canvas.create_rectangle(
@@ -875,8 +1011,16 @@ class GuiRadar(TerminalRadar):
                 outline="",
             )
             self.canvas.create_text(
+                left + 25,
+                top + 22,
+                anchor="w",
+                text=number,
+                fill=color,
+                font=("Consolas", 8, "bold"),
+            )
+            self.canvas.create_text(
                 left + 24,
-                top + card_height / 2 - 11,
+                top + card_height / 2 - 7,
                 anchor="w",
                 text=title,
                 fill=self.TEXT,
@@ -884,7 +1028,7 @@ class GuiRadar(TerminalRadar):
             )
             self.canvas.create_text(
                 left + 24,
-                top + card_height / 2 + 13,
+                top + card_height / 2 + 18,
                 anchor="w",
                 text=subtitle,
                 fill=self.MUTED,
@@ -894,7 +1038,7 @@ class GuiRadar(TerminalRadar):
                 left + card_width - 24,
                 top + card_height / 2,
                 anchor="e",
-                text="OPEN  >",
+                text="OPEN  →",
                 fill=color,
                 font=("Consolas", 9, "bold"),
             )
@@ -902,6 +1046,13 @@ class GuiRadar(TerminalRadar):
                 (left, top, left + card_width, bottom, mode)
             )
             top = bottom + 12
+        self.canvas.create_text(
+            width / 2,
+            min(height - 18, top + 16),
+            text="Read-only local visualization  •  No game memory is modified",
+            fill=self.MUTED,
+            font=("Segoe UI", 8),
+        )
 
     @staticmethod
     def _world_to_screen(position, matrix, width, height):
@@ -1186,15 +1337,6 @@ class GuiRadar(TerminalRadar):
             self.root.mainloop()
             return
 
-        proceed = messagebox.askyesno(
-            "Educational use only",
-            "Use only with your own CS2 client launched with -insecure.\n\n"
-            "Never use this in official or VAC-secured matches.\n\nContinue?",
-            parent=self.root,
-        )
-        if not proceed:
-            self._on_close()
-            return
         if not self.connect():
             messagebox.showerror(
                 "Connection failed",

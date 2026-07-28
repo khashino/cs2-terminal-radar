@@ -14,6 +14,7 @@ import os
 import json
 import ctypes
 import argparse
+import sys
 from ctypes import wintypes
 from pathlib import Path
 
@@ -62,8 +63,8 @@ DEFAULT_CONFIG = {
         "colors_enabled": True,
     },
     "gui": {
-        "window_width": 620,
-        "window_height": 680,
+        "window_width": 760,
+        "window_height": 720,
         "always_on_top": False,
         "opacity": 0.97,
         "view_mode": "menu",
@@ -85,6 +86,27 @@ DEFAULT_CONFIG = {
 }
 
 
+def application_dir():
+    """Return the source folder, or the executable folder in a frozen build."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def writable_path(filename):
+    """Return a persistent file path beside the source or executable."""
+    return application_dir() / filename
+
+
+def resource_path(filename):
+    """Locate an external override first, then a PyInstaller resource."""
+    external = writable_path(filename)
+    if external.exists():
+        return external
+    bundle_root = Path(getattr(sys, "_MEIPASS", application_dir()))
+    return bundle_root / filename
+
+
 def _deep_merge(base, override):
     """Return base updated with override, recursing into nested dicts."""
     result = dict(base)
@@ -96,9 +118,9 @@ def _deep_merge(base, override):
     return result
 
 
-def load_config(path="config.json"):
+def load_config(path=None):
     """Load config.json, merged onto defaults. Missing/invalid -> defaults."""
-    config_path = Path(path)
+    config_path = Path(path) if path is not None else resource_path("config.json")
     if not config_path.exists():
         print(f"ℹ️  {path} not found, using default configuration.")
         return DEFAULT_CONFIG
@@ -183,19 +205,25 @@ class OffsetManager:
 
     def _save_local(self, offsets):
         local_file = self.config.get("local_file", "offsets.json")
+        local_path = Path(local_file)
+        if not local_path.is_absolute():
+            local_path = writable_path(local_file)
         payload = {
             "_comment": "Auto-generated cache of a2x/cs2-dumper offsets used by the radar.",
             "_source": "https://github.com/a2x/cs2-dumper",
         }
         payload.update({key: hex(value) for key, value in offsets.items()})
         try:
-            with open(local_file, "w", encoding="utf-8") as f:
+            with local_path.open("w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=2)
         except OSError as e:
             print(f"⚠️  Could not cache offsets to {local_file}: {e}")
 
     def _load_local(self):
         local_file = Path(self.config.get("local_file", "offsets.json"))
+        if not local_file.is_absolute():
+            external = writable_path(local_file)
+            local_file = external if external.exists() else resource_path(local_file)
         if not local_file.exists():
             return None
         try:
