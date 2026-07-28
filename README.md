@@ -26,13 +26,9 @@
 
 ## Preview
 
-<img
-  src="./DEMO/Video.gif"
-  alt="Animated preview of CS2 Radar"
-  width="100%"
->
+![Animated preview of CS2 Radar](https://raw.githubusercontent.com/khashino/cs2-terminal-radar/main/DEMO/Video.gif)
 
-[Watch the full-quality MP4 demonstration](./DEMO/Video.mp4)
+[Watch the full-quality MP4 demonstration](https://github.com/khashino/cs2-terminal-radar/blob/main/DEMO/Video.mp4)
 
 ## What it provides
 
