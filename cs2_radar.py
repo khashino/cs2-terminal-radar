@@ -13,6 +13,7 @@ import time
 import os
 import json
 import ctypes
+import argparse
 from ctypes import wintypes
 from pathlib import Path
 
@@ -51,11 +52,18 @@ FALLBACK_OFFSETS = {
 }
 
 DEFAULT_CONFIG = {
+    "mode": "terminal",
     "radar": {
         "map_size": 40,
         "update_interval": 0.2,
         "scale": 20,
         "colors_enabled": True,
+    },
+    "gui": {
+        "window_width": 1040,
+        "window_height": 720,
+        "always_on_top": False,
+        "opacity": 0.97,
     },
     "display": {
         "show_health_bars": True,
@@ -590,8 +598,23 @@ class TerminalRadar:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Read-only CS2 radar")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--gui", action="store_true", help="open the desktop radar")
+    mode.add_argument("--terminal", action="store_true", help="use the terminal radar")
+    args = parser.parse_args()
+
     config = load_config()
-    radar = TerminalRadar(config)
+    selected_mode = (
+        "gui" if args.gui else
+        "terminal" if args.terminal else
+        str(config.get("mode", "terminal")).lower()
+    )
+    if selected_mode == "gui":
+        from gui_radar import GuiRadar
+        radar = GuiRadar(config)
+    else:
+        radar = TerminalRadar(config)
     radar.run()
 
 

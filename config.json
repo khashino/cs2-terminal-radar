@@ -1,9 +1,16 @@
 {
+  "mode": "terminal",
   "radar": {
     "map_size": 40,
     "update_interval": 0.2,
     "scale": 20,
     "colors_enabled": true
+  },
+  "gui": {
+    "window_width": 1040,
+    "window_height": 720,
+    "always_on_top": false,
+    "opacity": 0.97
   },
   "display": {
     "show_health_bars": true,
