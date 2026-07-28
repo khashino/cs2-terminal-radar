@@ -1,6 +1,7 @@
 """Desktop GUI renderer for CS2 Terminal Radar."""
 
 import math
+import random
 import time
 import tkinter as tk
 from tkinter import messagebox
@@ -23,13 +24,66 @@ class GuiRadar(TerminalRadar):
     BLUE = "#55a7ff"
     GRID = "#20304a"
 
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, demo=False):
+        super().__init__(config, load_offsets=not demo)
         self.gui_config = config.get("gui", {})
+        self.demo = demo
+        self.demo_started = time.monotonic()
+        self.demo_contacts = self._make_demo_contacts() if demo else []
         self.root = None
         self.canvas = None
         self.contact_canvas = None
         self.running = False
+
+    def _make_demo_contacts(self):
+        """Create stable random contacts that can be animated each frame."""
+        generator = random.Random()
+        contacts = []
+        for index in range(generator.randint(8, 13)):
+            contacts.append(
+                {
+                    "angle": generator.uniform(0, math.tau),
+                    "radius": generator.uniform(0.12, 0.92),
+                    "speed": generator.uniform(-0.28, 0.28),
+                    "pulse": generator.uniform(0, math.tau),
+                    "health": generator.randint(18, 100),
+                    "is_enemy": index < 7 or generator.random() < 0.55,
+                }
+            )
+        return contacts
+
+    def _demo_snapshot(self):
+        """Return animated data shaped like a live memory snapshot."""
+        elapsed = time.monotonic() - self.demo_started
+        world_radius = max(1.0, self.scale * self.radius)
+        players = []
+        for index, contact in enumerate(self.demo_contacts):
+            angle = contact["angle"] + elapsed * contact["speed"]
+            distance = world_radius * contact["radius"]
+            distance *= 1.0 + 0.035 * math.sin(elapsed + contact["pulse"])
+            players.append(
+                {
+                    "pawn": index + 1,
+                    "controller": index + 1,
+                    "health": contact["health"],
+                    "team": 2 if contact["is_enemy"] else 3,
+                    "position": (
+                        math.cos(angle) * distance,
+                        math.sin(angle) * distance,
+                        0.0,
+                    ),
+                    "distance": distance,
+                    "is_enemy": contact["is_enemy"],
+                }
+            )
+        local = {
+            "controller": 0,
+            "health": 100,
+            "team": 3,
+            "position": (0.0, 0.0, 0.0),
+        }
+        yaw = 24.0 * math.sin(elapsed * 0.18)
+        return local, (yaw, 0.0), players
 
     @staticmethod
     def _direction(yaw):
@@ -118,8 +172,8 @@ class GuiRadar(TerminalRadar):
             font=("Consolas", 11),
         ).pack(side="right")
 
-        body = tk.Frame(self.root, bg=self.BG, padx=24, pady=(0, 22))
-        body.pack(fill="both", expand=True)
+        body = tk.Frame(self.root, bg=self.BG, padx=24)
+        body.pack(fill="both", expand=True, pady=(0, 22))
 
         radar_panel = tk.Frame(
             body,
@@ -358,48 +412,54 @@ class GuiRadar(TerminalRadar):
                 outline="",
             )
 
+    def _show_snapshot(self, local, angles, players, status):
+        enemies = [player for player in players if player["is_enemy"]]
+        allies = [player for player in players if not player["is_enemy"]]
+        closest = (
+            min(enemies, key=lambda item: item["distance"]) if enemies else None
+        )
+        self.status_var.set(status)
+        self.enemy_var.set(str(len(enemies)))
+        self.ally_var.set(str(len(allies)))
+        self.closest_var.set(
+            f"{closest['distance']:.1f} units" if closest else "NO CONTACT"
+        )
+        yaw = angles[0]
+        self.heading_var.set(f"{self._direction(yaw)}  /  {yaw:.1f} deg")
+        self._draw_radar(players, local, angles)
+        self._draw_contacts(players)
+
     def _update_frame(self):
         if not self.running:
             return
         try:
             self.clock_var.set(time.strftime("%H:%M:%S"))
-            local = self.get_local_player()
-            if not local:
-                self.status_var.set("WAITING FOR PLAYER")
-                self.canvas.delete("all")
-                self.canvas.create_text(
-                    self.canvas.winfo_width() / 2,
-                    self.canvas.winfo_height() / 2,
-                    text="WAITING FOR PLAYER",
-                    fill=self.MUTED,
-                    font=("Segoe UI Semibold", 14),
+            if self.demo:
+                local, angles, players = self._demo_snapshot()
+                self._show_snapshot(
+                    local, angles, players, "DEMO  /  SIMULATED DATA"
                 )
             else:
-                angles = self.get_view_angles()
-                players = self.get_players(local)
-                enemies = [player for player in players if player["is_enemy"]]
-                allies = [player for player in players if not player["is_enemy"]]
-                closest = (
-                    min(enemies, key=lambda item: item["distance"])
-                    if enemies
-                    else None
-                )
-                self.status_var.set("LIVE  /  CONNECTED")
-                self.enemy_var.set(str(len(enemies)))
-                self.ally_var.set(str(len(allies)))
-                self.closest_var.set(
-                    f"{closest['distance']:.1f} units"
-                    if closest
-                    else "NO CONTACT"
-                )
-                yaw = angles[0]
-                self.heading_var.set(
-                    f"{self._direction(yaw)}  /  {yaw:.1f} deg"
-                )
-                self._draw_radar(players, local, angles)
-                self._draw_contacts(players)
+                local = self.get_local_player()
+                if not local:
+                    self.status_var.set("WAITING FOR PLAYER")
+                    self.canvas.delete("all")
+                    self.canvas.create_text(
+                        self.canvas.winfo_width() / 2,
+                        self.canvas.winfo_height() / 2,
+                        text="WAITING FOR PLAYER",
+                        fill=self.MUTED,
+                        font=("Segoe UI Semibold", 14),
+                    )
+                else:
+                    angles = self.get_view_angles()
+                    players = self.get_players(local)
+                    self._show_snapshot(
+                        local, angles, players, "LIVE  /  CONNECTED"
+                    )
         except Exception as error:
-            self.status_var.set(f"READ ERROR  /  {error}")
+            label = "DEMO ERROR" if self.demo else "READ ERROR"
+            self.status_var.set(f"{label}  /  {error}")
 
         delay = max(25, int(self.update_interval * 1000))
         self.root.after(delay, self._update_frame)
@@ -413,6 +473,12 @@ class GuiRadar(TerminalRadar):
 
     def run(self):
         self._build_window()
+        if self.demo:
+            self.running = True
+            self.root.after(50, self._update_frame)
+            self.root.mainloop()
+            return
+
         proceed = messagebox.askyesno(
             "Educational use only",
             "Use only with your own CS2 client launched with -insecure.\n\n"

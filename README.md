@@ -56,6 +56,15 @@ To open the desktop interface:
 python cs2_radar.py --gui
 ```
 
+To preview the complete animated interface with randomized data, without
+starting CS2 or running as Administrator:
+
+```bash
+python cs2_radar.py --demo
+```
+
+Demo mode does not connect to a process or download offsets.
+
 Set `"mode": "gui"` in `config.json` to make the GUI the default. You can
 always pass `--terminal` to switch back to the original terminal view.
 

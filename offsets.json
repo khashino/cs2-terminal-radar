@@ -1,11 +1,11 @@
 {
-  "_comment": "Offline fallback offsets in a flat schema. Auto-refreshed from a2x/cs2-dumper when radar.auto_update is enabled. Values are hex strings.",
+  "_comment": "Auto-generated cache of a2x/cs2-dumper offsets used by the radar.",
   "_source": "https://github.com/a2x/cs2-dumper",
-  "dwEntityList": "0x254FE70",
-  "dwLocalPlayerController": "0x237FB70",
-  "dwViewAngles": "0x23BAE18",
+  "dwEntityList": "0x254fe70",
+  "dwLocalPlayerController": "0x237fb70",
+  "dwViewAngles": "0x23bae18",
   "m_hPlayerPawn": "0x914",
-  "m_iHealth": "0x34C",
-  "m_iTeamNum": "0x3E7",
-  "m_vOldOrigin": "0x13B8"
+  "m_iHealth": "0x34c",
+  "m_iTeamNum": "0x3e7",
+  "m_vOldOrigin": "0x13b8"
 }

@@ -208,7 +208,7 @@ class OffsetManager:
 
 
 class TerminalRadar:
-    def __init__(self, config):
+    def __init__(self, config, load_offsets=True):
         radar_cfg = config["radar"]
         self.map_size = int(radar_cfg["map_size"])
         self.update_interval = float(radar_cfg["update_interval"])
@@ -216,8 +216,12 @@ class TerminalRadar:
         self.radius = self.map_size // 2
         self.display = config["display"]
 
-        # Load offsets.
-        offsets = OffsetManager(config["offsets"]).load()
+        # Demo/render-only modes can skip the network and process offsets.
+        offsets = (
+            OffsetManager(config["offsets"]).load()
+            if load_offsets
+            else dict(FALLBACK_OFFSETS)
+        )
         self.dwEntityList = offsets["dwEntityList"]
         self.dwLocalPlayerController = offsets["dwLocalPlayerController"]
         self.dwViewAngles = offsets["dwViewAngles"]
@@ -602,17 +606,22 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--gui", action="store_true", help="open the desktop radar")
     mode.add_argument("--terminal", action="store_true", help="use the terminal radar")
+    mode.add_argument(
+        "--demo",
+        action="store_true",
+        help="preview the GUI with animated random data (CS2 not required)",
+    )
     args = parser.parse_args()
 
     config = load_config()
     selected_mode = (
-        "gui" if args.gui else
+        "gui" if args.gui or args.demo else
         "terminal" if args.terminal else
         str(config.get("mode", "terminal")).lower()
     )
     if selected_mode == "gui":
         from gui_radar import GuiRadar
-        radar = GuiRadar(config)
+        radar = GuiRadar(config, demo=args.demo)
     else:
         radar = TerminalRadar(config)
     radar.run()
