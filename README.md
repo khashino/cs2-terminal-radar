@@ -14,6 +14,7 @@ in a VAC ban. Only run it against your own client launched with `-insecure`.
 ## ✨ Features
 
 - Real-time top-down radar in the terminal
+- Optional desktop GUI with a circular radar and live contact panel
 - Direction indicator (N/E/S/W)
 - Distance to players and closest-enemy readout
 - Health bars (green/yellow/red)
@@ -26,6 +27,7 @@ in a VAC ban. Only run it against your own client launched with `-insecure`.
 ```
 cs2-terminal-radar/
 ├── cs2_radar.py       # Main app
+├── gui_radar.py       # Optional Tkinter desktop interface
 ├── config.json        # Settings (loaded on startup; defaults used if missing)
 ├── offsets.json       # Offline fallback offsets (auto-refreshed when online)
 ├── update_offsets.py  # Manual offset updater
@@ -48,17 +50,33 @@ python cs2_radar.py
 
 Press `Ctrl+C` to exit.
 
+To open the desktop interface:
+
+```bash
+python cs2_radar.py --gui
+```
+
+Set `"mode": "gui"` in `config.json` to make the GUI the default. You can
+always pass `--terminal` to switch back to the original terminal view.
+
 ## ⚙️ Configuration
 
 Edit `config.json` (all keys are optional — missing keys fall back to defaults):
 
 ```jsonc
 {
+  "mode": "terminal",        // "terminal" or "gui"
   "radar": {
     "map_size": 40,          // Grid size (cells)
     "update_interval": 0.2,  // Seconds between refreshes
     "scale": 20,             // World units per grid cell (zoom)
     "colors_enabled": true
+  },
+  "gui": {
+    "window_width": 1040,
+    "window_height": 720,
+    "always_on_top": false,
+    "opacity": 0.97
   },
   "display": {
     "show_health_bars": true,
